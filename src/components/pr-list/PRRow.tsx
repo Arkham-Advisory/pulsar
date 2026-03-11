@@ -93,7 +93,7 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
         <ExternalLink className="h-3 w-3 text-slate-300 dark:text-slate-600 group-hover:text-brand-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
 
         {/* Approval badge */}
-        {approvalStatus === 'approved' && (
+        {approvalStatus === 'approved' && ciStatus !== 'failure' && (
           <span className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
             <GitMerge className="h-2.5 w-2.5" />
             Ready

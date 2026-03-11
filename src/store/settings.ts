@@ -16,6 +16,7 @@ interface SettingsStore extends Settings {
   toggleDarkMode: () => void;
   setDarkMode: (dark: boolean) => void;
   setRefreshInterval: (minutes: number) => void;
+  setSectionOpen: (id: string, open: boolean) => void;
   hasValidSettings: () => boolean;
 }
 
@@ -40,6 +41,8 @@ export const useSettingsStore = create<SettingsStore>()(
       toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
       setDarkMode: (darkMode) => set({ darkMode }),
       setRefreshInterval: (refreshIntervalMinutes) => set({ refreshIntervalMinutes }),
+      setSectionOpen: (id, open) =>
+        set((state) => ({ sectionOpen: { ...state.sectionOpen, [id]: open } })),
       hasValidSettings: () => {
         const { pat, repoFilters } = get();
         return pat.trim().length > 0 && repoFilters.length > 0;
@@ -57,6 +60,7 @@ export const useSettingsStore = create<SettingsStore>()(
         staleDaysThreshold: state.staleDaysThreshold,
         darkMode: state.darkMode,
         refreshIntervalMinutes: state.refreshIntervalMinutes,
+        sectionOpen: state.sectionOpen,
       }),
     }
   )

@@ -22,7 +22,7 @@ import { cn } from '../lib/utils';
 import type { PullRequest } from '../types/github';
 import { useQueryClient } from '@tanstack/react-query';
 
-type StateFilter = 'open' | 'merged' | 'all';
+type StateFilter = 'open' | 'merged';
 
 export function PRListPage() {
   const { userLogin, repoFilters, staleDaysThreshold, selectedRepos, setSelectedRepos } = useSettingsStore();
@@ -77,12 +77,13 @@ export function PRListPage() {
   }, [prs, search, stateFilter, selectedRepos]);
 
   // Partition into sections
-  const { attention, reviewRequested, mine, allOpen, merged, drafts } = useMemo(() => {
+  const { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge } = useMemo(() => {
     const attention: PullRequest[] = [];
     const reviewRequested: PullRequest[] = [];
     const mine: PullRequest[] = [];
     const merged: PullRequest[] = [];
     const drafts: PullRequest[] = [];
+    const readyToMerge: PullRequest[] = [];
 
     const placed = new Set<number>();
 
@@ -95,6 +96,18 @@ export function PRListPage() {
 
     mergedPRs.sort(sortByUpdated);
     merged.push(...mergedPRs);
+
+    // Pass 0 — Ready to merge: approved + CI not failing
+    for (const pr of openPRs) {
+      if (pr.draft) continue;
+      const ci = ciStatuses?.get(pr.id) ?? pr.ciStatus;
+      const approval = approvalStatuses?.get(pr.id);
+      if (approval === 'approved' && ci !== 'failure') {
+        readyToMerge.push(pr);
+        placed.add(pr.id);
+      }
+    }
+    readyToMerge.sort(sortByUpdated);
 
     // Pass 1 — Needs Attention: CI failing
     for (const pr of openPRs) {
@@ -155,8 +168,8 @@ export function PRListPage() {
       }
     }
 
-    return { attention, reviewRequested, mine, allOpen, merged, drafts };
-  }, [filtered, ciStatuses, userLogin]);
+    return { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge };
+  }, [filtered, ciStatuses, approvalStatuses, userLogin, staleDaysThreshold]);
 
   const totalOpen = allOpen.length + drafts.length;
 
@@ -187,7 +200,7 @@ export function PRListPage() {
 
         {/* State filter */}
         <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-          {(['open', 'merged', 'all'] as StateFilter[]).map((s) => (
+          {(['open', 'merged'] as StateFilter[]).map((s) => (
             <button
               key={s}
               type="button"
@@ -308,77 +321,100 @@ export function PRListPage() {
           </div>
         ) : (
           <div className="p-5 space-y-4 max-w-[1800px] mx-auto">
-            <PRSection
-              title="Needs Attention"
-              subtitle={`CI failing · or no reviewer assigned, open >${staleDaysThreshold}d`}
-              icon={<AlertTriangle className="h-4 w-4" />}
-              prs={attention}
-              ciStatuses={ciStatuses}
-              approvalStatuses={approvalStatuses}
-              accent="red"
-              defaultOpen
-              showRepo={showRepoColumn}
-              emptyMessage={`No PRs need attention right now`}
-            />
-
-            <PRSection
-              title="Review Requested"
-              icon={<Eye className="h-4 w-4" />}
-              prs={reviewRequested}
-              ciStatuses={ciStatuses}
-              approvalStatuses={approvalStatuses}
-              accent="blue"
-              defaultOpen
-              showRepo={showRepoColumn}
-              emptyMessage="No review requests for you"
-            />
-
-            <PRSection
-              title="My PRs"
-              icon={<GitPullRequest className="h-4 w-4" />}
-              prs={mine}
-              ciStatuses={ciStatuses}
-              approvalStatuses={approvalStatuses}
-              accent="green"
-              defaultOpen
-              showRepo={showRepoColumn}
-              emptyMessage="You have no open pull requests"
-            />
-
-            <PRSection
-              title="All PRs"
-              icon={<GitPullRequest className="h-4 w-4" />}
-              prs={allOpen}
-              ciStatuses={ciStatuses}
-              approvalStatuses={approvalStatuses}
-              accent="slate"
-              defaultOpen={false}
-              showRepo={showRepoColumn}
-              emptyMessage="No other open pull requests"
-            />
-
-            {drafts.length > 0 && (
+            {stateFilter === 'merged' ? (
               <PRSection
-                title="Drafts"
-                icon={<GitPullRequestDraft className="h-4 w-4" />}
-                prs={drafts}
-                ciStatuses={ciStatuses}
-                accent="slate"
-                defaultOpen={false}
-                showRepo={showRepoColumn}
-              />
-            )}
-
-            {(stateFilter === 'merged' || stateFilter === 'all') && (
-              <PRSection
+                id="recently-merged"
                 title="Recently Merged"
                 icon={<GitMerge className="h-4 w-4" />}
                 prs={merged}
                 accent="slate"
-                defaultOpen={stateFilter === 'merged'}
+                defaultOpen
                 showRepo={showRepoColumn}
                 emptyMessage="No merged PRs in the selected time range"
               />
+            ) : (
+              <>
+                {readyToMerge.length > 0 && (
+                  <PRSection
+                    id="ready-to-merge"
+                    title="Ready to Merge"
+                    subtitle="Approved · CI passing or neutral"
+                    icon={<GitMerge className="h-4 w-4" />}
+                    prs={readyToMerge}
+                    ciStatuses={ciStatuses}
+                    approvalStatuses={approvalStatuses}
+                    accent="green"
+                    defaultOpen
+                    showRepo={showRepoColumn}
+                  />
+                )}
+
+                <PRSection
+                  id="needs-attention"
+                  title="Needs Attention"
+                  subtitle={`CI failing · or no reviewer assigned, open >${staleDaysThreshold}d`}
+                  icon={<AlertTriangle className="h-4 w-4" />}
+                  prs={attention}
+                  ciStatuses={ciStatuses}
+                  approvalStatuses={approvalStatuses}
+                  accent="red"
+                  defaultOpen
+                  showRepo={showRepoColumn}
+                  emptyMessage={`No PRs need attention right now`}
+                />
+
+                <PRSection
+                  id="review-requested"
+                  title="Review Requested"
+                  icon={<Eye className="h-4 w-4" />}
+                  prs={reviewRequested}
+                  ciStatuses={ciStatuses}
+                  approvalStatuses={approvalStatuses}
+                  accent="blue"
+                  defaultOpen
+                  showRepo={showRepoColumn}
+                  emptyMessage="No review requests for you"
+                />
+
+                <PRSection
+                  id="my-prs"
+                  title="My PRs"
+                  icon={<GitPullRequest className="h-4 w-4" />}
+                  prs={mine}
+                  ciStatuses={ciStatuses}
+                  approvalStatuses={approvalStatuses}
+                  accent="green"
+                  defaultOpen
+                  showRepo={showRepoColumn}
+                  emptyMessage="You have no open pull requests"
+                />
+
+                <PRSection
+                  id="all-prs"
+                  title="All PRs"
+                  icon={<GitPullRequest className="h-4 w-4" />}
+                  prs={allOpen}
+                  ciStatuses={ciStatuses}
+                  approvalStatuses={approvalStatuses}
+                  accent="slate"
+                  defaultOpen={false}
+                  showRepo={showRepoColumn}
+                  emptyMessage="No other open pull requests"
+                />
+
+                {drafts.length > 0 && (
+                  <PRSection
+                    id="drafts"
+                    title="Drafts"
+                    icon={<GitPullRequestDraft className="h-4 w-4" />}
+                    prs={drafts}
+                    ciStatuses={ciStatuses}
+                    accent="slate"
+                    defaultOpen={false}
+                    showRepo={showRepoColumn}
+                  />
+                )}
+              </>
             )}
 
             <div className="pb-4 text-center text-xs text-slate-400">

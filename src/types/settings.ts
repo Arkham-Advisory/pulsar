@@ -19,6 +19,7 @@ export interface Settings {
   staleDaysThreshold: number;
   darkMode: boolean;
   refreshIntervalMinutes: number;
+  sectionOpen: Record<string, boolean>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   timeRange: '30d',
   staleDaysThreshold: 7,
   darkMode: true,
-  refreshIntervalMinutes: 15,
+  refreshIntervalMinutes: 5,
+  sectionOpen: {},
 };
 

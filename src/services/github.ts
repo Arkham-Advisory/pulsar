@@ -27,6 +27,23 @@ export async function validatePAT(pat: string): Promise<{ valid: boolean; login?
   }
 }
 
+// Return the total repo count for an org or user (public + private).
+// Uses the metadata endpoint — no pagination needed.
+export async function fetchOwnerRepoCount(pat: string, owner: string): Promise<number> {
+  const octokit = getOctokit(pat);
+  try {
+    const { data } = await octokit.orgs.get({ org: owner });
+    return (data.public_repos ?? 0) + (data.total_private_repos ?? 0);
+  } catch {
+    try {
+      const { data } = await octokit.users.getByUsername({ username: owner });
+      return (data.public_repos ?? 0) + ((data as any).total_private_repos ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+}
+
 // Fetch all repos for an owner (org or user)
 export async function fetchReposForOwner(
   octokit: Octokit,

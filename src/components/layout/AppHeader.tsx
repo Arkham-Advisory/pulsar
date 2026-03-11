@@ -1,5 +1,6 @@
 import { useSettingsStore } from '../../store/settings';
 import { cn } from '../../lib/utils';
+import { useRefreshCountdown } from '../../hooks/useRefreshCountdown';
 import {
   Settings,
   RefreshCw,
@@ -51,7 +52,8 @@ export function AppHeader({
   lastUpdated,
   progress,
 }: Props) {
-  const { darkMode, toggleDarkMode, timeRange } = useSettingsStore();
+  const { darkMode, toggleDarkMode, timeRange, refreshIntervalMinutes } = useSettingsStore();
+  const countdown = useRefreshCountdown(lastUpdated, refreshIntervalMinutes);
 
   const timeRangeLabel: Record<string, string> = {
     '7d': '7d', '14d': '14d', '30d': '30d', '60d': '60d', '90d': '90d',
@@ -109,8 +111,13 @@ export function AppHeader({
           </div>
         )}
         {lastUpdated && !isFetching && (
-          <span className="hidden lg:block text-xs text-slate-400">
+          <span className="hidden lg:flex items-center gap-1.5 text-xs text-slate-400">
             {format(lastUpdated, 'HH:mm')}
+            {countdown && (
+              <span className="text-slate-300 dark:text-slate-600" title="Next refresh in">
+                · in {countdown}
+              </span>
+            )}
           </span>
         )}
       </div>

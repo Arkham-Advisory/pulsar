@@ -64,6 +64,7 @@ function AppContent() {
       qc.invalidateQueries({ queryKey: ['pr-list'] })
       qc.invalidateQueries({ queryKey: ['dashboard-data'] })
       qc.invalidateQueries({ queryKey: ['ci-statuses'] })
+      qc.invalidateQueries({ queryKey: ['approval-statuses'] })
     }, refreshIntervalMinutes * 60 * 1000)
     return () => clearInterval(interval)
   }, [refreshIntervalMinutes, hasValidSettings, qc])
