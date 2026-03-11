@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Maximize2,
   Minimize2,
-  GitPullRequest,
   Moon,
   Sun,
   AlertCircle,
@@ -64,9 +63,7 @@ export function AppHeader({
     <header className="h-14 flex items-center gap-0 px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
       {/* Brand */}
       <div className="flex items-center gap-2 mr-5">
-        <div className="p-1.5 bg-brand-600 rounded-lg">
-          <GitPullRequest className="h-4 w-4 text-white" />
-        </div>
+        <img src="/favicon.svg" alt="Pulsar logo" className="h-7 w-7" />
         <span className="font-bold text-slate-900 dark:text-white text-sm tracking-tight hidden sm:block">
           Pulsar
         </span>

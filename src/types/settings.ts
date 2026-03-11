@@ -10,6 +10,15 @@ export type RepoFilterEntry =
   | { id: string; type: 'prefix'; owner: string; prefix: string }
   | { id: string; type: 'repo';   owner: string; repo: string };
 
+export interface FilterPreset {
+  id: string;
+  name: string;
+  search: string;
+  stateFilter: 'open' | 'merged';
+  selectedRepos: string[];
+  hideBotPRs: boolean;
+}
+
 export interface Settings {
   pat: string;
   userLogin: string;
@@ -21,6 +30,8 @@ export interface Settings {
   refreshIntervalMinutes: number;
   sectionOpen: Record<string, boolean>;
   analyticsConsent: boolean | null; // null = undecided (show prompt)
+  hideBotPRs: boolean;
+  filterPresets: FilterPreset[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,5 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   refreshIntervalMinutes: 5,
   sectionOpen: {},
   analyticsConsent: null,
+  hideBotPRs: false,
+  filterPresets: [],
 };
 

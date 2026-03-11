@@ -5,6 +5,7 @@ import { usePRListData } from '../hooks/usePRListData';
 import { useCIStatuses } from '../hooks/useCIStatuses';
 import { useApprovalStatuses } from '../hooks/useApprovalStatuses';
 import { PRSection } from '../components/pr-list/PRSection';
+import { PRDetailPanel } from '../components/pr-list/PRDetailPanel';
 import { Spinner } from '../components/ui/Spinner';
 import { differenceInHours } from 'date-fns';
 import {
@@ -18,15 +19,26 @@ import {
   X,
   ChevronDown,
   Check,
+  Bot,
+  Bookmark,
+  BookmarkCheck,
+  Trash2,
+  Save,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { PullRequest } from '../types/github';
+import type { FilterPreset } from '../types/settings';
 import { useQueryClient } from '@tanstack/react-query';
 
 type StateFilter = 'open' | 'merged';
 
 export function PRListPage() {
-  const { userLogin, repoFilters, staleDaysThreshold, selectedRepos, setSelectedRepos } = useSettingsStore();
+  const {
+    userLogin, repoFilters, staleDaysThreshold,
+    selectedRepos, setSelectedRepos,
+    hideBotPRs, setHideBotPRs,
+    filterPresets, addFilterPreset, removeFilterPreset,
+  } = useSettingsStore();
   const { data: prs = [], isLoading, isFetching, progress } = usePRListData();
   const queryClient = useQueryClient();
 
@@ -43,19 +55,38 @@ export function PRListPage() {
     }
   }, []);
   const [stateFilter, setStateFilter] = useState<StateFilter>('open');
+  const [selectedPR, setSelectedPR] = useState<PullRequest | null>(null);
+
+  // Repo dropdown
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
   const repoDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // Preset dropdown
+  const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
+  const [saveMode, setSaveMode] = useState(false);
+  const [saveNameInput, setSaveNameInput] = useState('');
+  const presetDropdownRef = useRef<HTMLDivElement>(null);
+  const saveInputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdowns on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (repoDropdownRef.current && !repoDropdownRef.current.contains(e.target as Node)) {
         setRepoDropdownOpen(false);
       }
+      if (presetDropdownRef.current && !presetDropdownRef.current.contains(e.target as Node)) {
+        setPresetDropdownOpen(false);
+        setSaveMode(false);
+        setSaveNameInput('');
+      }
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    if (saveMode) setTimeout(() => saveInputRef.current?.focus(), 50);
+  }, [saveMode]);
 
   // Lazy CI status — kicks off once PR list is loaded
   const { data: ciStatuses } = useCIStatuses(prs, prs.length > 0);
@@ -77,6 +108,7 @@ export function PRListPage() {
       if (stateFilter === 'open' && (pr.state !== 'open' || pr.merged)) return false;
       if (stateFilter === 'merged' && !pr.merged) return false;
       if (selectedRepos.length > 0 && !selectedRepos.includes(pr.repo)) return false;
+      if (hideBotPRs && pr.user.login.endsWith('[bot]')) return false;
       if (q) {
         return (
           pr.title.toLowerCase().includes(q) ||
@@ -86,7 +118,7 @@ export function PRListPage() {
       }
       return true;
     });
-  }, [prs, search, stateFilter, selectedRepos]);
+  }, [prs, search, stateFilter, selectedRepos, hideBotPRs]);
 
   // Partition into sections
   const { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge } = useMemo(() => {
@@ -186,10 +218,27 @@ export function PRListPage() {
 
   const totalOpen = allOpen.length + drafts.length;
 
+  const applyPreset = useCallback((preset: FilterPreset) => {
+    setSearch(preset.search);
+    setStateFilter(preset.stateFilter);
+    setSelectedRepos(preset.selectedRepos);
+    setHideBotPRs(preset.hideBotPRs);
+    setPresetDropdownOpen(false);
+    setSaveMode(false);
+  }, [setSelectedRepos, setHideBotPRs]);
+
+  const savePreset = useCallback(() => {
+    const name = saveNameInput.trim();
+    if (!name) return;
+    addFilterPreset({ id: Date.now().toString(), name, search, stateFilter, selectedRepos, hideBotPRs });
+    setSaveNameInput('');
+    setSaveMode(false);
+  }, [saveNameInput, search, stateFilter, selectedRepos, hideBotPRs, addFilterPreset]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Toolbar */}
-      <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="shrink-0 flex items-center gap-2 px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-wrap">
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -232,7 +281,7 @@ export function PRListPage() {
 
         {/* Repo multi-select */}
         {repos.length > 1 && (
-          <div className="relative" ref={repoDropdownRef}>
+          <div className="relative shrink-0" ref={repoDropdownRef}>
             <button
               type="button"
               onClick={() => setRepoDropdownOpen((v) => !v)}
@@ -296,6 +345,129 @@ export function PRListPage() {
           </div>
         )}
 
+        {/* Bot filter toggle */}
+        <button
+          type="button"
+          onClick={() => setHideBotPRs(!hideBotPRs)}
+          title={hideBotPRs ? 'Show bot PRs' : 'Hide bot PRs (dependabot, renovate, etc.)'}
+          className={cn(
+            'flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors border shrink-0',
+            hideBotPRs
+              ? 'bg-brand-50 dark:bg-brand-950/30 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-400'
+              : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-slate-400'
+          )}
+        >
+          <Bot className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Bots</span>
+        </button>
+
+        {/* Preset dropdown */}
+        <div className="relative shrink-0" ref={presetDropdownRef}>
+          <button
+            type="button"
+            onClick={() => {
+              setPresetDropdownOpen((v) => !v);
+              if (presetDropdownOpen) { setSaveMode(false); setSaveNameInput(''); }
+            }}
+            title="Filter presets"
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors border shrink-0 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-slate-400"
+          >
+            <Bookmark className="h-3.5 w-3.5" />
+            {filterPresets.length > 0 && (
+              <span className="hidden sm:inline">{filterPresets.length}</span>
+            )}
+          </button>
+          {presetDropdownOpen && (
+            <div className="absolute top-full mt-1 right-0 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg w-64 py-1">
+              {!saveMode ? (
+                <button
+                  type="button"
+                  onClick={() => setSaveMode(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <Save className="h-3.5 w-3.5 text-slate-400" />
+                  Save current filters as preset
+                </button>
+              ) : (
+                <div className="px-3 py-2">
+                  <input
+                    ref={saveInputRef}
+                    type="text"
+                    value={saveNameInput}
+                    onChange={(e) => setSaveNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') savePreset();
+                      if (e.key === 'Escape') { setSaveMode(false); setSaveNameInput(''); }
+                    }}
+                    placeholder="Preset name…"
+                    className="input text-xs h-7 py-0 mb-2"
+                  />
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={savePreset}
+                      disabled={!saveNameInput.trim()}
+                      className="flex-1 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSaveMode(false); setSaveNameInput(''); }}
+                      className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              {filterPresets.length > 0 && (
+                <>
+                  <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
+                  {filterPresets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="flex items-center gap-1 px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className="flex-1 flex items-start gap-2 text-left min-w-0"
+                      >
+                        <BookmarkCheck className="h-3.5 w-3.5 text-brand-400 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{preset.name}</p>
+                          <p className="text-[10px] text-slate-400 truncate">
+                            {[
+                              preset.stateFilter,
+                              preset.search && `"${preset.search}"`,
+                              preset.selectedRepos.length > 0 && `${preset.selectedRepos.length} repo${preset.selectedRepos.length > 1 ? 's' : ''}`,
+                              preset.hideBotPRs && 'no bots',
+                            ].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeFilterPreset(preset.id)}
+                        className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-400 dark:hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete preset"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+              {filterPresets.length === 0 && !saveMode && (
+                <p className="px-3 py-2 text-[11px] text-slate-400 text-center">
+                  No presets yet.<br />Set your filters and save them here.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Progress / stats */}
         <div className="flex items-center gap-2 ml-auto shrink-0">
           {(isLoading || isFetching) && progress ? (
@@ -342,6 +514,7 @@ export function PRListPage() {
                 defaultOpen
                 showRepo={showRepoColumn}
                 emptyMessage="No merged PRs in the selected time range"
+                onSelectPR={setSelectedPR}
               />
             ) : (
               <>
@@ -357,6 +530,7 @@ export function PRListPage() {
                     accent="green"
                     defaultOpen
                     showRepo={showRepoColumn}
+                    onSelectPR={setSelectedPR}
                   />
                 )}
 
@@ -371,7 +545,8 @@ export function PRListPage() {
                   accent="red"
                   defaultOpen
                   showRepo={showRepoColumn}
-                  emptyMessage={`No PRs need attention right now`}
+                  emptyMessage="No PRs need attention right now"
+                  onSelectPR={setSelectedPR}
                 />
 
                 <PRSection
@@ -385,6 +560,7 @@ export function PRListPage() {
                   defaultOpen
                   showRepo={showRepoColumn}
                   emptyMessage="No review requests for you"
+                  onSelectPR={setSelectedPR}
                 />
 
                 <PRSection
@@ -398,6 +574,7 @@ export function PRListPage() {
                   defaultOpen
                   showRepo={showRepoColumn}
                   emptyMessage="You have no open pull requests"
+                  onSelectPR={setSelectedPR}
                 />
 
                 <PRSection
@@ -411,6 +588,7 @@ export function PRListPage() {
                   defaultOpen={false}
                   showRepo={showRepoColumn}
                   emptyMessage="No other open pull requests"
+                  onSelectPR={setSelectedPR}
                 />
 
                 {drafts.length > 0 && (
@@ -423,20 +601,30 @@ export function PRListPage() {
                     accent="slate"
                     defaultOpen={false}
                     showRepo={showRepoColumn}
+                    onSelectPR={setSelectedPR}
                   />
                 )}
               </>
             )}
 
             <div className="pb-4 text-center text-xs text-slate-400">
-              {filtered.length} of {prs.length} pull requests ·
-              {' '}
-              {staleDaysThreshold}d stale threshold ·
+              {filtered.length} of {prs.length} pull requests ·{' '}
+              {staleDaysThreshold}d stale threshold ·{' '}
               CI status loads lazily for open PRs
             </div>
           </div>
         )}
       </div>
+
+      {/* PR Detail Panel */}
+      {selectedPR && (
+        <PRDetailPanel
+          pr={selectedPR}
+          ciStatus={ciStatuses?.get(selectedPR.id)}
+          approvalStatus={approvalStatuses?.get(selectedPR.id)}
+          onClose={() => setSelectedPR(null)}
+        />
+      )}
     </div>
   );
 }

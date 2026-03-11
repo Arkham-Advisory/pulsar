@@ -1,4 +1,4 @@
-# Pulsar
+# ![Pulsar favicon](public/favicon-96x96.png) Pulsar
 
 A lightweight GitHub pull request monitor built for engineering teams. Pulsar keeps a pulse on open PRs across your repositories — surfacing what needs attention, what's ready to merge, and where reviews are stalling.
 

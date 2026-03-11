@@ -21,6 +21,7 @@ interface Props {
   showRepo?: boolean;
   accent?: 'red' | 'amber' | 'green' | 'blue' | 'slate';
   emptyMessage?: string;
+  onSelectPR?: (pr: PullRequest) => void;
 }
 
 const ACCENT_BADGE: Record<string, string> = {
@@ -43,6 +44,7 @@ export function PRSection({
   showRepo = true,
   accent = 'slate',
   emptyMessage,
+  onSelectPR,
 }: Props) {
   const { sectionOpen, setSectionOpen } = useSettingsStore();
   const open = id in sectionOpen ? sectionOpen[id] : defaultOpen;
@@ -59,19 +61,19 @@ export function PRSection({
       <button
         type="button"
         onClick={() => { setSectionOpen(id, !open); capture('section_toggled', { section_id: id, open: !open }); }}
-        className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
       >
         {open
-          ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
-          : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+          ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
         }
         <span className="text-slate-400">{icon}</span>
-        <span className="flex-1 min-w-0">
-          <span className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+        <span className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
             {title}
           </span>
           {subtitle && (
-            <span className="block text-[11px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 leading-tight">
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 font-normal leading-tight">
               {subtitle}
             </span>
           )}
@@ -111,6 +113,7 @@ export function PRSection({
                   approvalStatus={approvalStatuses?.get(pr.id)}
                   showRepo={showRepo}
                   section={id}
+                  onSelect={onSelectPR ? () => onSelectPR(pr) : undefined}
                 />
               ))}
               {hasMore && (

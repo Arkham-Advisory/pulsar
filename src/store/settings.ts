@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Settings, RepoFilterEntry } from '../types/settings';
+import type { Settings, RepoFilterEntry, FilterPreset } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { TimeRange } from '../types/github';
 
@@ -18,6 +18,9 @@ interface SettingsStore extends Settings {
   setRefreshInterval: (minutes: number) => void;
   setSectionOpen: (id: string, open: boolean) => void;
   setAnalyticsConsent: (consent: boolean) => void;
+  setHideBotPRs: (hide: boolean) => void;
+  addFilterPreset: (preset: FilterPreset) => void;
+  removeFilterPreset: (id: string) => void;
   hasValidSettings: () => boolean;
 }
 
@@ -45,6 +48,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setSectionOpen: (id, open) =>
         set((state) => ({ sectionOpen: { ...state.sectionOpen, [id]: open } })),
       setAnalyticsConsent: (analyticsConsent) => set({ analyticsConsent }),
+      setHideBotPRs: (hideBotPRs) => set({ hideBotPRs }),
+      addFilterPreset: (preset) =>
+        set((state) => ({ filterPresets: [...state.filterPresets, preset] })),
+      removeFilterPreset: (id) =>
+        set((state) => ({ filterPresets: state.filterPresets.filter((p) => p.id !== id) })),
       hasValidSettings: () => {
         const { pat, repoFilters } = get();
         return pat.trim().length > 0 && repoFilters.length > 0;
@@ -64,6 +72,8 @@ export const useSettingsStore = create<SettingsStore>()(
         refreshIntervalMinutes: state.refreshIntervalMinutes,
         sectionOpen: state.sectionOpen,
         analyticsConsent: state.analyticsConsent,
+        hideBotPRs: state.hideBotPRs,
+        filterPresets: state.filterPresets,
       }),
     }
   )

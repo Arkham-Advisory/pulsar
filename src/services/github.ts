@@ -536,3 +536,33 @@ export async function fetchAllData(
 
   return { prs: allPRs, reviews: allReviews };
 }
+
+// Fetch the description body and size stats of a single PR (lazy — only called when the detail panel opens)
+export interface PRDetails {
+  body: string | null;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  commits: number;
+  comments: number;
+  review_comments: number;
+}
+
+export async function fetchPRDetails(pat: string, repo: string, prNumber: number): Promise<PRDetails> {
+  const [owner, repoName] = repo.split('/');
+  const octokit = getOctokit(pat);
+  try {
+    const { data } = await octokit.pulls.get({ owner, repo: repoName, pull_number: prNumber });
+    return {
+      body: data.body ?? null,
+      additions: data.additions,
+      deletions: data.deletions,
+      changed_files: data.changed_files,
+      commits: data.commits,
+      comments: data.comments,
+      review_comments: data.review_comments,
+    };
+  } catch {
+    return { body: null, additions: 0, deletions: 0, changed_files: 0, commits: 0, comments: 0, review_comments: 0 };
+  }
+}

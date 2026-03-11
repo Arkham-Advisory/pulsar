@@ -22,6 +22,7 @@ interface Props {
   showRepo?: boolean;
   highlight?: boolean;
   section?: string;
+  onSelect?: () => void;
 }
 
 const CI_ICON = {
@@ -41,28 +42,32 @@ function getLabelStyle(color: string) {
   return `background-color:#${color};color:${(0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000' : '#fff'}`;
 }
 
-export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section }: Props) {
+export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect }: Props) {
   const age = formatDistanceToNowStrict(new Date(pr.updated_at), { addSuffix: false });
   const isOld = (Date.now() - new Date(pr.updated_at).getTime()) > 1000 * 60 * 60 * 24 * 7;
 
   const labels = pr.labels.slice(0, 3);
   const extraLabels = pr.labels.length - 3;
 
-  const handleClick = () => capture('pr_opened', {
-    section,
-    has_ci_status: ciStatus !== 'unknown',
-    approval_status: approvalStatus ?? 'unknown',
-  });
+  const handleGitHubClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    capture('pr_opened', {
+      section,
+      has_ci_status: ciStatus !== 'unknown',
+      approval_status: approvalStatus ?? 'unknown',
+    });
+  };
 
   return (
-    <a
-      href={pr.html_url}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={handleClick}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect?.()}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect?.(); }}
       className={cn(
         'group flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/60',
         'hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors',
+        onSelect && 'cursor-pointer',
         highlight && 'bg-amber-50/30 dark:bg-amber-900/10'
       )}
     >
@@ -91,14 +96,21 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
         {pr.draft && (
           <GitPullRequestDraft className="h-3.5 w-3.5 text-slate-400 shrink-0" />
         )}
-        <span className={cn(
-          'text-sm font-medium truncate',
-          pr.draft
-            ? 'text-slate-400 dark:text-slate-500'
-            : 'text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400'
-        )}>
+        <a
+          href={pr.html_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={handleGitHubClick}
+          title={pr.title}
+          className={cn(
+            'text-sm font-medium truncate',
+            pr.draft
+              ? 'text-slate-400 dark:text-slate-500'
+              : 'text-slate-800 dark:text-slate-200 group-hover:text-brand-600 dark:group-hover:text-brand-400'
+          )}
+        >
           {pr.title}
-        </span>
+        </a>
         <ExternalLink className="h-3 w-3 text-slate-300 dark:text-slate-600 group-hover:text-brand-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
 
         {/* Approval badge */}
@@ -181,6 +193,6 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
           {age}
         </span>
       </div>
-    </a>
+    </div>
   );
 }
