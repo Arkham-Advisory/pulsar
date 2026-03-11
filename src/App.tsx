@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useSettingsStore } from './store/settings'
+import { capture } from './lib/analytics'
 import { validatePAT } from './services/github'
 import { usePRListData } from './hooks/usePRListData'
 import { useDashboardData } from './hooks/useDashboardData'
@@ -61,6 +62,7 @@ function AppContent() {
   useEffect(() => {
     if (!hasValidSettings() || refreshIntervalMinutes <= 0) return
     const interval = setInterval(() => {
+      capture('refresh_triggered', { method: 'auto' })
       qc.invalidateQueries({ queryKey: ['pr-list'] })
       qc.invalidateQueries({ queryKey: ['dashboard-data'] })
       qc.invalidateQueries({ queryKey: ['ci-statuses'] })
@@ -102,6 +104,7 @@ function AppContent() {
   }, [])
 
   const handleRefresh = useCallback(() => {
+    capture('refresh_triggered', { method: 'manual', page })
     if (page === 'prs') {
       qc.invalidateQueries({ queryKey: ['pr-list'] })
       qc.invalidateQueries({ queryKey: ['ci-statuses'] })

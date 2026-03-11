@@ -1,4 +1,5 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { capture } from '../lib/analytics';
 import { useSettingsStore } from '../store/settings';
 import { usePRListData } from '../hooks/usePRListData';
 import { useCIStatuses } from '../hooks/useCIStatuses';
@@ -30,6 +31,17 @@ export function PRListPage() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (value.trim()) {
+      searchDebounceRef.current = setTimeout(() => {
+        capture('filter_changed', { filter_type: 'search' });
+      }, 600);
+    }
+  }, []);
   const [stateFilter, setStateFilter] = useState<StateFilter>('open');
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
   const repoDropdownRef = useRef<HTMLDivElement>(null);
@@ -184,13 +196,13 @@ export function PRListPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search title, repo, author…"
             className="input pl-8 text-sm h-8 py-0"
           />
           {search && (
             <button
-              onClick={() => setSearch('')}
+              onClick={() => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); setSearch(''); }}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               type="button"
             >
@@ -205,7 +217,7 @@ export function PRListPage() {
             <button
               key={s}
               type="button"
-              onClick={() => setStateFilter(s)}
+              onClick={() => { setStateFilter(s); capture('filter_changed', { filter_type: 'state', value: s }); }}
               className={cn(
                 'text-xs px-3 py-1 rounded-md font-medium transition-colors capitalize',
                 stateFilter === s
@@ -262,11 +274,9 @@ export function PRListPage() {
                       key={r}
                       type="button"
                       onClick={() => {
-                        setSelectedRepos(
-                          active
-                            ? selectedRepos.filter((x) => x !== r)
-                            : [...selectedRepos, r]
-                        );
+                        const next = active ? selectedRepos.filter((x) => x !== r) : [...selectedRepos, r];
+                        setSelectedRepos(next);
+                        capture('filter_changed', { filter_type: 'repo', value: next.length });
                       }}
                       className={cn(
                         'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',

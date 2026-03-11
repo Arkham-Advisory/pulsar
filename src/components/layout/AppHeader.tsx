@@ -1,6 +1,7 @@
 import { useSettingsStore } from '../../store/settings';
 import { cn } from '../../lib/utils';
 import { useRefreshCountdown } from '../../hooks/useRefreshCountdown';
+import { capture } from '../../lib/analytics';
 import {
   Settings,
   RefreshCw,
@@ -77,7 +78,7 @@ export function AppHeader({
           <button
             key={id}
             type="button"
-            onClick={() => onNavigate(id)}
+            onClick={() => { onNavigate(id); capture('page_viewed', { page: id }); }}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
               page === id

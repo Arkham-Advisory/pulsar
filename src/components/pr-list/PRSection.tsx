@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { PRRow } from './PRRow';
 import { useSettingsStore } from '../../store/settings';
+import { capture } from '../../lib/analytics';
 import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
 
@@ -57,7 +58,7 @@ export function PRSection({
       {/* Section header */}
       <button
         type="button"
-        onClick={() => setSectionOpen(id, !open)}
+        onClick={() => { setSectionOpen(id, !open); capture('section_toggled', { section_id: id, open: !open }); }}
         className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
       >
         {open
@@ -109,6 +110,7 @@ export function PRSection({
                   ciStatus={ciStatuses?.get(pr.id)}
                   approvalStatus={approvalStatuses?.get(pr.id)}
                   showRepo={showRepo}
+                  section={id}
                 />
               ))}
               {hasMore && (

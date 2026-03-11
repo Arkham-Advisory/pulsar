@@ -1,4 +1,5 @@
 import { cn } from '../../lib/utils';
+import { capture } from '../../lib/analytics';
 import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
 import {
@@ -20,6 +21,7 @@ interface Props {
   approvalStatus?: ApprovalStatus;
   showRepo?: boolean;
   highlight?: boolean;
+  section?: string;
 }
 
 const CI_ICON = {
@@ -39,18 +41,25 @@ function getLabelStyle(color: string) {
   return `background-color:#${color};color:${(0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000' : '#fff'}`;
 }
 
-export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false }: Props) {
+export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section }: Props) {
   const age = formatDistanceToNowStrict(new Date(pr.updated_at), { addSuffix: false });
   const isOld = (Date.now() - new Date(pr.updated_at).getTime()) > 1000 * 60 * 60 * 24 * 7;
 
   const labels = pr.labels.slice(0, 3);
   const extraLabels = pr.labels.length - 3;
 
+  const handleClick = () => capture('pr_opened', {
+    section,
+    has_ci_status: ciStatus !== 'unknown',
+    approval_status: approvalStatus ?? 'unknown',
+  });
+
   return (
     <a
       href={pr.html_url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={handleClick}
       className={cn(
         'group flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/60',
         'hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors',

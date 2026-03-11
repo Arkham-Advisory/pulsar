@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useSettingsStore } from '../../store/settings';
 import { validatePAT, fetchOwnerRepoCount } from '../../services/github';
+import { capture } from '../../lib/analytics';
 import { cn } from '../../lib/utils';
 import { Spinner } from '../ui/Spinner';
 import {
@@ -95,9 +96,11 @@ export function SettingsPanel({ onClose }: Props) {
       setPatUser(result.login || '');
       setPat(localPat);
       setUserLogin(result.login || '');
+      capture('pat_validated', { success: true });
     } else {
       setPatStatus('invalid');
       setPatError(result.error || 'Invalid token');
+      capture('pat_validated', { success: false });
     }
   }, [localPat, setPat]);
 
@@ -113,6 +116,7 @@ export function SettingsPanel({ onClose }: Props) {
       setCheckingCount(false);
       if (count > 100) {
         setPendingOrg({ owner, count, id });
+        capture('large_org_warning_shown', { repo_count: count });
         return;
       }
       addRepoFilter({ id, type: 'org', owner });
@@ -145,6 +149,15 @@ export function SettingsPanel({ onClose }: Props) {
     }
   }, [filterMode, ownerInput, prefixInput, repoInput, addRepoFilter, pat]);
 
+  const handleClose = useCallback(() => {
+    capture('settings_saved', {
+      filter_count: repoFilters.length,
+      time_range: timeRange,
+      refresh_interval: refreshIntervalMinutes,
+    });
+    onClose();
+  }, [repoFilters.length, timeRange, refreshIntervalMinutes, onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/40 backdrop-blur-sm animate-fade-in">
       <div className="h-full w-full max-w-lg bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col animate-slide-up overflow-hidden">
@@ -156,7 +169,7 @@ export function SettingsPanel({ onClose }: Props) {
             </div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Settings</h2>
           </div>
-          <button onClick={onClose} className="btn-ghost p-1.5">
+          <button onClick={handleClose} className="btn-ghost p-1.5">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -372,6 +385,7 @@ export function SettingsPanel({ onClose }: Props) {
                         addRepoFilter({ id: pendingOrg.id, type: 'org', owner: pendingOrg.owner });
                         setOwnerInput('');
                         setPendingOrg(null);
+                        capture('large_org_warning_shown', { repo_count: pendingOrg.count, action: 'add_anyway' });
                       }}
                     >
                       Add anyway
@@ -380,6 +394,7 @@ export function SettingsPanel({ onClose }: Props) {
                       type="button"
                       className="flex-1 text-xs px-3 py-1.5 rounded-lg font-medium bg-brand-600 text-white hover:bg-brand-700 transition-colors"
                       onClick={() => {
+                        capture('large_org_warning_shown', { repo_count: pendingOrg.count, action: 'use_prefix' });
                         setPendingOrg(null);
                         setFilterMode('prefix');
                       }}
