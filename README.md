@@ -2,6 +2,12 @@
 
 A lightweight GitHub pull request monitor built for engineering teams. Pulsar keeps a pulse on open PRs across your repositories — surfacing what needs attention, what's ready to merge, and where reviews are stalling.
 
+## Use it now
+
+**[pulsar.arkham-advisory.com](https://pulsar.arkham-advisory.com)**
+
+Open the app, go to **Settings**, and paste a GitHub Personal Access Token with `repo` scope. Pulsar runs entirely in your browser — your token never leaves your machine.
+
 ## Features
 
 - **PR triage** — sections for Needs Attention, Review Requested, Your PRs, Drafts, and All Open PRs
@@ -12,20 +18,9 @@ A lightweight GitHub pull request monitor built for engineering teams. Pulsar ke
 - **Multi-repo filtering** — filter by org, specific repos, or a hand-picked selection
 - **Dark/light mode**
 
-## Getting Started
+## For developers
 
 ```bash
 npm install
 npm run dev
 ```
-
-On first launch, go to **Settings** and paste a GitHub Personal Access Token with `repo` scope. Pulsar stores it locally in your browser — nothing is sent to any server.
-
-## Stack
-
-- Vite 7 + React 18 + TypeScript
-- Tailwind CSS v3
-- TanStack Query v5
-- Zustand (persisted settings)
-- Octokit REST
-- Recharts
