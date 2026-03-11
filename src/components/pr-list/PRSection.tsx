@@ -1,0 +1,124 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { PRRow } from './PRRow';
+import type { PullRequest } from '../../types/github';
+import type { ApprovalStatus } from '../../services/github';
+
+const PAGE_SIZE = 30;
+
+interface Props {
+  title: string;
+  subtitle?: string;
+  icon: React.ReactNode;
+  prs: PullRequest[];
+  ciStatuses?: Map<number, PullRequest['ciStatus']>;
+  approvalStatuses?: Map<number, ApprovalStatus>;
+  defaultOpen?: boolean;
+  showRepo?: boolean;
+  accent?: 'red' | 'amber' | 'green' | 'blue' | 'slate';
+  emptyMessage?: string;
+}
+
+const ACCENT_BADGE: Record<string, string> = {
+  red:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  green: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  blue:  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  slate: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+};
+
+export function PRSection({
+  title,
+  subtitle,
+  icon,
+  prs,
+  ciStatuses,
+  approvalStatuses,
+  defaultOpen = true,
+  showRepo = true,
+  accent = 'slate',
+  emptyMessage,
+}: Props) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [page, setPage] = useState(1);
+
+  const visible = prs.slice(0, page * PAGE_SIZE);
+  const hasMore = prs.length > visible.length;
+
+  return (
+    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+      {/* Section header */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+      >
+        {open
+          ? <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+          : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+        }
+        <span className="text-slate-400">{icon}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+            {title}
+          </span>
+          {subtitle && (
+            <span className="block text-[11px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 leading-tight">
+              {subtitle}
+            </span>
+          )}
+        </span>
+        <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', ACCENT_BADGE[accent])}>
+          {prs.length}
+        </span>
+      </button>
+
+      {/* Column headers (only when open) */}
+      {open && prs.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
+          <div className="w-4 shrink-0" />
+          {showRepo && <div className="w-52 hidden md:block text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Repo</div>}
+          {!showRepo && <div className="w-16 hidden md:block text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">#</div>}
+          <div className="flex-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Title</div>
+          <div className="hidden sm:block w-28 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Author</div>
+          <div className="hidden md:block w-16 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Reviewers</div>
+          <div className="w-16 text-right text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Updated</div>
+        </div>
+      )}
+
+      {/* PR rows */}
+      {open && (
+        <div className="bg-white dark:bg-slate-900">
+          {prs.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-slate-400">
+              {emptyMessage ?? 'No pull requests'}
+            </div>
+          ) : (
+            <>
+              {visible.map((pr) => (
+                <PRRow
+                  key={pr.id}
+                  pr={pr}
+                  ciStatus={ciStatuses?.get(pr.id)}
+                  approvalStatus={approvalStatuses?.get(pr.id)}
+                  showRepo={showRepo}
+                />
+              ))}
+              {hasMore && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); setPage((p) => p + 1); }}
+                  className="w-full py-3 text-xs text-brand-600 dark:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors border-t border-slate-100 dark:border-slate-800"
+                >
+                  Show {Math.min(PAGE_SIZE, prs.length - visible.length)} more
+                  <span className="text-slate-400 ml-1">({prs.length - visible.length} remaining)</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
