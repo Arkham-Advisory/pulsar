@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { PullRequest, PRReview } from '../../types/github';
 import { useSettingsStore } from '../../store/settings';
-import { getSinceDate, computeMetrics, buildWeeklyData, buildCycleTimeData, buildAuthorStats, buildReviewerStats, buildSizeDistribution, formatDuration } from '../../lib/metrics';
+import { getSinceDate, computeMetrics, buildWeeklyData, buildCycleTimeData, buildAuthorStats, buildReviewerStats, buildSizeDistribution, buildWeeklyDigest, formatDuration } from '../../lib/metrics';
 import { MetricCard } from './MetricCard';
 import { StalePRsCard } from './StalePRsCard';
 import { WaitingReviewCard } from './WaitingReviewCard';
@@ -11,6 +11,7 @@ import { CycleTimeChart } from '../charts/CycleTimeChart';
 import { ReviewWorkloadChart } from '../charts/ReviewWorkloadChart';
 import { PRSizeChart } from '../charts/PRSizeChart';
 import { AuthorActivityTable } from '../charts/AuthorActivityTable';
+import { WeeklyDigestCard } from './WeeklyDigestCard';
 import {
   GitPullRequest,
   GitMerge,
@@ -41,6 +42,10 @@ export function Dashboard({ prs, reviews, loading }: Props) {
   const authorStats = useMemo(() => buildAuthorStats(prs, reviews), [prs, reviews]);
   const reviewerStats = useMemo(() => buildReviewerStats(prs, reviews), [prs, reviews]);
   const sizeDistribution = useMemo(() => buildSizeDistribution(prs), [prs]);
+  const weeklyDigest = useMemo(
+    () => (prs.length > 0 ? buildWeeklyDigest(prs, reviews) : null),
+    [prs, reviews]
+  );
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -106,10 +111,11 @@ export function Dashboard({ prs, reviews, loading }: Props) {
           <CycleTimeChart data={cycleTimeData} loading={loading} />
         </div>
 
-        {/* Charts Row 2: Review Workload + Size Distribution */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Charts Row 2: Review Workload + Size Distribution + Weekly Digest */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <ReviewWorkloadChart data={reviewerStats} loading={loading} />
           <PRSizeChart data={sizeDistribution} loading={loading} />
+          <WeeklyDigestCard digest={weeklyDigest} loading={loading} />
         </div>
 
         {/* Action Cards Row: Stale + Waiting + Recent */}

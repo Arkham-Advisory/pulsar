@@ -7,6 +7,7 @@ import type {
   AuthorStats,
   ReviewerStats,
   PRSizeCategory,
+  WeeklyDigest,
 } from '../types/github';
 import {
   format,
@@ -178,14 +179,19 @@ export function buildAuthorStats(prs: PullRequest[], reviews: PRReview[]): Autho
         avatar_url: pr.user.avatar_url,
         prsOpened: 0,
         prsMerged: 0,
+        openPRs: 0,
         reviewsGiven: 0,
         avgCycleTimeHours: null,
+        avgTimeToFirstReviewHours: null,
       });
     }
     const stats = authorMap.get(login)!;
     stats.prsOpened++;
     if (pr.merged) {
       stats.prsMerged++;
+    }
+    if (pr.state === 'open' && !pr.draft) {
+      stats.openPRs++;
     }
   }
 
@@ -201,6 +207,39 @@ export function buildAuthorStats(prs: PullRequest[], reviews: PRReview[]): Autho
   for (const [login, times] of cycleTimesByAuthor) {
     if (authorMap.has(login)) {
       authorMap.get(login)!.avgCycleTimeHours =
+        times.reduce((a, b) => a + b, 0) / times.length;
+    }
+  }
+
+  // Avg time to first review per author
+  const reviewsByPR = new Map<string, PRReview[]>();
+  for (const r of reviews) {
+    const key = `${r.repo}#${r.pr_number}`;
+    if (!reviewsByPR.has(key)) reviewsByPR.set(key, []);
+    reviewsByPR.get(key)!.push(r);
+  }
+  const firstReviewTimesByAuthor = new Map<string, number[]>();
+  for (const pr of prs) {
+    const key = `${pr.repo}#${pr.number}`;
+    const prReviews = reviewsByPR.get(key);
+    if (prReviews && prReviews.length > 0) {
+      const firstReview = prReviews.reduce((a, b) =>
+        new Date(a.submitted_at) < new Date(b.submitted_at) ? a : b
+      );
+      const hours = differenceInHours(
+        new Date(firstReview.submitted_at),
+        new Date(pr.created_at)
+      );
+      if (hours >= 0) {
+        const login = pr.user.login;
+        if (!firstReviewTimesByAuthor.has(login)) firstReviewTimesByAuthor.set(login, []);
+        firstReviewTimesByAuthor.get(login)!.push(hours);
+      }
+    }
+  }
+  for (const [login, times] of firstReviewTimesByAuthor) {
+    if (authorMap.has(login)) {
+      authorMap.get(login)!.avgTimeToFirstReviewHours =
         times.reduce((a, b) => a + b, 0) / times.length;
     }
   }
@@ -232,6 +271,7 @@ export function buildReviewerStats(prs: PullRequest[], reviews: PRReview[]): Rev
           avatar_url: reviewer.avatar_url,
           reviewsPending: 0,
           reviewsCompleted: 0,
+          changesRequested: 0,
           avgResponseHours: null,
           _responseTimes: [],
         });
@@ -254,18 +294,22 @@ export function buildReviewerStats(prs: PullRequest[], reviews: PRReview[]): Rev
         avatar_url: reviewList[0].user.avatar_url,
         reviewsPending: 0,
         reviewsCompleted: 0,
+        changesRequested: 0,
         avgResponseHours: null,
         _responseTimes: [],
       });
     }
     if (reviewerMap.has(login)) {
       reviewerMap.get(login)!.reviewsCompleted += reviewList.length;
+      reviewerMap.get(login)!.changesRequested += reviewList.filter(
+        (r) => r.state === 'CHANGES_REQUESTED'
+      ).length;
     }
   }
 
   return Array.from(reviewerMap.values())
     .map(({ _responseTimes, ...rest }) => rest)
-    .sort((a, b) => b.reviewsPending - a.reviewsPending)
+    .sort((a, b) => b.reviewsCompleted - a.reviewsCompleted)
     .slice(0, 10);
 }
 
@@ -303,4 +347,74 @@ export function getSinceDate(timeRange: string): Date {
   const since = new Date(now);
   since.setDate(since.getDate() - days);
   return startOfDay(since);
+}
+
+// Build weekly digest for the last 7 days vs previous 7 days
+export function buildWeeklyDigest(
+  prs: PullRequest[],
+  reviews: PRReview[],
+  now: Date = new Date()
+): WeeklyDigest {
+  const weekStart = startOfDay(new Date(now));
+  weekStart.setDate(weekStart.getDate() - 6);
+  const prevWeekStart = new Date(weekStart);
+  prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+
+  const inCurrentWeek = (d: Date) => d >= weekStart && d <= now;
+  const inPrevWeek = (d: Date) => d >= prevWeekStart && d < weekStart;
+
+  const mergedThisWeek = prs.filter(
+    (pr) => pr.merged_at && inCurrentWeek(new Date(pr.merged_at))
+  );
+  const mergedPrevWeek = prs.filter(
+    (pr) => pr.merged_at && inPrevWeek(new Date(pr.merged_at))
+  );
+
+  const avgCycleTimeHours =
+    mergedThisWeek.length > 0
+      ? mergedThisWeek.reduce(
+          (sum, pr) =>
+            sum + differenceInHours(new Date(pr.merged_at!), new Date(pr.created_at)),
+          0
+        ) / mergedThisWeek.length
+      : null;
+
+  const openPRs = prs.filter((pr) => pr.state === 'open' && !pr.draft);
+  const draftPRs = prs.filter((pr) => pr.draft);
+
+  // Avg time to first review for PRs created this week
+  const reviewsByPR = new Map<string, PRReview[]>();
+  for (const r of reviews) {
+    const key = `${r.repo}#${r.pr_number}`;
+    if (!reviewsByPR.has(key)) reviewsByPR.set(key, []);
+    reviewsByPR.get(key)!.push(r);
+  }
+  const firstReviewTimes: number[] = [];
+  for (const pr of prs.filter((p) => inCurrentWeek(new Date(p.created_at)))) {
+    const key = `${pr.repo}#${pr.number}`;
+    const prReviews = reviewsByPR.get(key);
+    if (prReviews && prReviews.length > 0) {
+      const first = prReviews.reduce((a, b) =>
+        new Date(a.submitted_at) < new Date(b.submitted_at) ? a : b
+      );
+      const h = differenceInHours(new Date(first.submitted_at), new Date(pr.created_at));
+      if (h >= 0) firstReviewTimes.push(h);
+    }
+  }
+  const avgTimeToFirstReviewHours =
+    firstReviewTimes.length > 0
+      ? firstReviewTimes.reduce((a, b) => a + b, 0) / firstReviewTimes.length
+      : null;
+
+  const weekLabel = `${format(weekStart, 'MMM d')} – ${format(now, 'MMM d')}`;
+
+  return {
+    weekLabel,
+    merges: mergedThisWeek.length,
+    prevWeekMerges: mergedPrevWeek.length,
+    avgCycleTimeHours,
+    openCount: openPRs.length,
+    draftCount: draftPRs.length,
+    avgTimeToFirstReviewHours,
+  };
 }

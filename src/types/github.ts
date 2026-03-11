@@ -93,8 +93,10 @@ export interface AuthorStats {
   avatar_url: string;
   prsOpened: number;
   prsMerged: number;
+  openPRs: number;
   reviewsGiven: number;
   avgCycleTimeHours: number | null;
+  avgTimeToFirstReviewHours: number | null;
 }
 
 export interface ReviewerStats {
@@ -102,6 +104,7 @@ export interface ReviewerStats {
   avatar_url: string;
   reviewsPending: number;
   reviewsCompleted: number;
+  changesRequested: number;
   avgResponseHours: number | null;
 }
 
@@ -109,4 +112,14 @@ export interface PRSizeCategory {
   label: string;
   count: number;
   color: string;
+}
+
+export interface WeeklyDigest {
+  weekLabel: string;
+  merges: number;
+  prevWeekMerges: number;
+  avgCycleTimeHours: number | null;
+  openCount: number;
+  draftCount: number;
+  avgTimeToFirstReviewHours: number | null;
 }
