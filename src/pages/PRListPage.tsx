@@ -109,11 +109,12 @@ export function PRListPage() {
     }
     readyToMerge.sort(sortByUpdated);
 
-    // Pass 1 — Needs Attention: CI failing
+    // Pass 1 — Needs Attention: CI failing or changes requested
     for (const pr of openPRs) {
       if (pr.draft) continue;
       const ci = ciStatuses?.get(pr.id) ?? pr.ciStatus;
-      if (ci === 'failure') {
+      const approval = approvalStatuses?.get(pr.id);
+      if (ci === 'failure' || approval === 'changes_requested') {
         attention.push(pr);
         placed.add(pr.id);
       }
@@ -352,7 +353,7 @@ export function PRListPage() {
                 <PRSection
                   id="needs-attention"
                   title="Needs Attention"
-                  subtitle={`CI failing · or no reviewer assigned, open >${staleDaysThreshold}d`}
+                  subtitle={`CI failing · changes requested · or no reviewer assigned, open >${staleDaysThreshold}d`}
                   icon={<AlertTriangle className="h-4 w-4" />}
                   prs={attention}
                   ciStatuses={ciStatuses}
