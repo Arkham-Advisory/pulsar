@@ -12,7 +12,8 @@ export async function initAnalytics(): Promise<void> {
 
   const { default: posthog } = await import('posthog-js');
   posthog.init(key, {
-    api_host: 'https://eu.i.posthog.com',
+    api_host: 'https://z.arkham-advisory.com',
+    ui_host: 'https://eu.posthog.com',
     person_profiles: 'identified_only',
     capture_pageview: true,
     capture_pageleave: true,

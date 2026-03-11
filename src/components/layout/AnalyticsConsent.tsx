@@ -52,7 +52,7 @@ export function AnalyticsConsent() {
               'No GitHub tokens or credentials',
               'No repo names, org names, or PR titles',
               'No personal or identifying information',
-              'Powered by PostHog — EU region only',
+              'Powered by PostHog',
             ].map((item) => (
               <li key={item} className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <BarChart3 className="h-3.5 w-3.5 text-brand-500 shrink-0 mt-0.5" />
