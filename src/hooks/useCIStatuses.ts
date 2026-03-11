@@ -23,5 +23,6 @@ export function useCIStatuses(prs: PullRequest[], enabled: boolean) {
     gcTime: 1000 * 60 * 30,
     retry: false,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 }

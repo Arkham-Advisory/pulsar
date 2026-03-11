@@ -13,6 +13,7 @@ export function useRateLimit(enabled: boolean) {
     gcTime: 1000 * 60 * 10,
     retry: 1,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
     refetchInterval: 1000 * 60 * 2, // auto-refresh every 2 min
   });
 }

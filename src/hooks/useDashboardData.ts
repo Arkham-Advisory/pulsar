@@ -31,6 +31,7 @@ export function useDashboardData(enabled: boolean) {
     gcTime: 1000 * 60 * 60,
     retry: 1,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   return { ...query, progress };

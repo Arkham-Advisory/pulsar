@@ -28,6 +28,7 @@ export function useGitHubData() {
     gcTime: 1000 * 60 * 60,    // 1 hour
     retry: 1,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   return { ...query, progress };
