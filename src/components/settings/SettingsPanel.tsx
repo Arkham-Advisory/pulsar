@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useSettingsStore } from '../../store/settings';
-import { validatePAT } from '../../services/github';
+import { validatePAT, fetchOwnerRepoCount } from '../../services/github';
 import { cn } from '../../lib/utils';
 import { Spinner } from '../ui/Spinner';
 import {
@@ -66,11 +66,12 @@ export function SettingsPanel({ onClose }: Props) {
     toggleDarkMode,
     refreshIntervalMinutes,
     setRefreshInterval,
+    userLogin,
   } = useSettingsStore();
 
   const [localPat, setLocalPat] = useState(pat);
   const [patStatus, setPatStatus] = useState<PATStatus>(pat ? 'valid' : 'idle');
-  const [patUser, setPatUser] = useState<string>('');
+  const [patUser, setPatUser] = useState<string>(userLogin);
   const [patError, setPatError] = useState('');
   const [showPat, setShowPat] = useState(false);
 
@@ -80,6 +81,9 @@ export function SettingsPanel({ onClose }: Props) {
   const [prefixInput, setPrefixInput] = useState('');
   const [repoInput, setRepoInput] = useState('');
   const [addError, setAddError] = useState('');
+  const [checkingCount, setCheckingCount] = useState(false);
+  type PendingOrg = { owner: string; count: number; id: string };
+  const [pendingOrg, setPendingOrg] = useState<PendingOrg | null>(null);
 
   const handleValidatePAT = useCallback(async () => {
     if (!localPat.trim()) return;
@@ -97,15 +101,21 @@ export function SettingsPanel({ onClose }: Props) {
     }
   }, [localPat, setPat]);
 
-  const handleAddFilter = useCallback(() => {
+  const handleAddFilter = useCallback(async () => {
     setAddError('');
     const id = crypto.randomUUID();
 
     if (filterMode === 'org') {
       const owner = ownerInput.trim();
       if (!owner) { setAddError('Owner is required'); return; }
-      const entry: RepoFilterEntry = { id, type: 'org', owner };
-      addRepoFilter(entry);
+      setCheckingCount(true);
+      const count = await fetchOwnerRepoCount(pat, owner);
+      setCheckingCount(false);
+      if (count > 100) {
+        setPendingOrg({ owner, count, id });
+        return;
+      }
+      addRepoFilter({ id, type: 'org', owner });
       setOwnerInput('');
     } else if (filterMode === 'prefix') {
       const owner = ownerInput.trim();
@@ -133,7 +143,7 @@ export function SettingsPanel({ onClose }: Props) {
       setOwnerInput('');
       setRepoInput('');
     }
-  }, [filterMode, ownerInput, prefixInput, repoInput, addRepoFilter]);
+  }, [filterMode, ownerInput, prefixInput, repoInput, addRepoFilter, pat]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/40 backdrop-blur-sm animate-fade-in">
@@ -214,7 +224,7 @@ export function SettingsPanel({ onClose }: Props) {
                 Requires <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">repo</code> scope.
                 Your token is stored only in your browser's localStorage and never sent to any server.{' '}
                 <a
-                  href="https://github.com/settings/tokens/new?scopes=repo&description=PR+Dashboard"
+                  href="https://github.com/settings/tokens/new?scopes=repo&description=Pulsar+dashboard"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-brand-600 dark:text-brand-400 hover:underline"
@@ -332,12 +342,53 @@ export function SettingsPanel({ onClose }: Props) {
 
               <button
                 onClick={handleAddFilter}
-                className="btn-secondary text-xs w-full"
+                disabled={checkingCount}
+                className={cn('btn-secondary text-xs w-full', checkingCount && 'opacity-60 cursor-not-allowed')}
                 type="button"
               >
-                <Plus className="h-3.5 w-3.5" />
-                Add {MODE_LABELS[filterMode]}
+                {checkingCount ? (
+                  <><Spinner size="sm" /> Checking repo count…</>
+                ) : (
+                  <><Plus className="h-3.5 w-3.5" /> Add {MODE_LABELS[filterMode]}</>
+                )}
               </button>
+
+              {/* Large-org confirmation */}
+              {pendingOrg && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800 dark:text-amber-300">
+                      <strong>{pendingOrg.owner}</strong> has <strong>{pendingOrg.count} repositories</strong>.
+                      Tracking all of them may be slow and consume a lot of API quota.{' '}
+                      Consider using the <strong>Prefix</strong> filter to narrow down to the repos that matter.
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="flex-1 text-xs px-3 py-1.5 rounded-lg font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                      onClick={() => {
+                        addRepoFilter({ id: pendingOrg.id, type: 'org', owner: pendingOrg.owner });
+                        setOwnerInput('');
+                        setPendingOrg(null);
+                      }}
+                    >
+                      Add anyway
+                    </button>
+                    <button
+                      type="button"
+                      className="flex-1 text-xs px-3 py-1.5 rounded-lg font-medium bg-brand-600 text-white hover:bg-brand-700 transition-colors"
+                      onClick={() => {
+                        setPendingOrg(null);
+                        setFilterMode('prefix');
+                      }}
+                    >
+                      Use Prefix instead
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {addError && (
                 <p className="text-xs text-red-500 flex items-center gap-1">

@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { PRRow } from './PRRow';
+import { useSettingsStore } from '../../store/settings';
 import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
 
 const PAGE_SIZE = 30;
 
 interface Props {
+  id: string;
   title: string;
   subtitle?: string;
   icon: React.ReactNode;
@@ -29,6 +31,7 @@ const ACCENT_BADGE: Record<string, string> = {
 };
 
 export function PRSection({
+  id,
   title,
   subtitle,
   icon,
@@ -40,8 +43,11 @@ export function PRSection({
   accent = 'slate',
   emptyMessage,
 }: Props) {
-  const [open, setOpen] = useState(defaultOpen);
+  const { sectionOpen, setSectionOpen } = useSettingsStore();
+  const open = id in sectionOpen ? sectionOpen[id] : defaultOpen;
   const [page, setPage] = useState(1);
+
+  if (prs.length === 0) return null;
 
   const visible = prs.slice(0, page * PAGE_SIZE);
   const hasMore = prs.length > visible.length;
@@ -51,7 +57,7 @@ export function PRSection({
       {/* Section header */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setSectionOpen(id, !open)}
         className="w-full flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
       >
         {open
