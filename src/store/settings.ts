@@ -17,6 +17,7 @@ interface SettingsStore extends Settings {
   setDarkMode: (dark: boolean) => void;
   setRefreshInterval: (minutes: number) => void;
   setSectionOpen: (id: string, open: boolean) => void;
+  setAnalyticsConsent: (consent: boolean) => void;
   hasValidSettings: () => boolean;
 }
 
@@ -43,6 +44,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setRefreshInterval: (refreshIntervalMinutes) => set({ refreshIntervalMinutes }),
       setSectionOpen: (id, open) =>
         set((state) => ({ sectionOpen: { ...state.sectionOpen, [id]: open } })),
+      setAnalyticsConsent: (analyticsConsent) => set({ analyticsConsent }),
       hasValidSettings: () => {
         const { pat, repoFilters } = get();
         return pat.trim().length > 0 && repoFilters.length > 0;
@@ -61,6 +63,7 @@ export const useSettingsStore = create<SettingsStore>()(
         darkMode: state.darkMode,
         refreshIntervalMinutes: state.refreshIntervalMinutes,
         sectionOpen: state.sectionOpen,
+        analyticsConsent: state.analyticsConsent,
       }),
     }
   )

@@ -6,6 +6,7 @@ import { validatePAT } from './services/github'
 import { usePRListData } from './hooks/usePRListData'
 import { useDashboardData } from './hooks/useDashboardData'
 import { AppHeader, type AppPage } from './components/layout/AppHeader'
+import { AnalyticsConsent } from './components/layout/AnalyticsConsent'
 import { PRListPage } from './pages/PRListPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { APILimitsPage } from './pages/APILimitsPage'
@@ -146,6 +147,7 @@ function AppContent() {
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
+      <AnalyticsConsent />
     </div>
   )
 }

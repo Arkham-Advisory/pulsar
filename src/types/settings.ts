@@ -20,6 +20,7 @@ export interface Settings {
   darkMode: boolean;
   refreshIntervalMinutes: number;
   sectionOpen: Record<string, boolean>;
+  analyticsConsent: boolean | null; // null = undecided (show prompt)
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,5 +33,6 @@ export const DEFAULT_SETTINGS: Settings = {
   darkMode: true,
   refreshIntervalMinutes: 5,
   sectionOpen: {},
+  analyticsConsent: null,
 };
 
