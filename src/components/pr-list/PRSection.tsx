@@ -24,6 +24,14 @@ interface Props {
   onSelectPR?: (pr: PullRequest) => void;
 }
 
+const ACCENT_ICON: Record<string, string> = {
+  red:   'text-red-500 dark:text-red-400',
+  amber: 'text-amber-500 dark:text-amber-400',
+  green: 'text-green-500 dark:text-green-400',
+  blue:  'text-blue-500 dark:text-blue-400',
+  slate: 'text-slate-400',
+};
+
 const ACCENT_BADGE: Record<string, string> = {
   red:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
@@ -67,7 +75,7 @@ export function PRSection({
           ? <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
           : <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
         }
-        <span className="text-slate-400">{icon}</span>
+        <span className={ACCENT_ICON[accent]}>{icon}</span>
         <span className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
             {title}
