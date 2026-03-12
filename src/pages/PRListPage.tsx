@@ -4,6 +4,7 @@ import { useSettingsStore } from '../store/settings';
 import { usePRListData } from '../hooks/usePRListData';
 import { useCIStatuses } from '../hooks/useCIStatuses';
 import { useApprovalStatuses } from '../hooks/useApprovalStatuses';
+import { useConflictStatuses } from '../hooks/useConflictStatuses';
 import { PRSection } from '../components/pr-list/PRSection';
 import { PRDetailPanel } from '../components/pr-list/PRDetailPanel';
 import { Spinner } from '../components/ui/Spinner';
@@ -92,6 +93,10 @@ export function PRListPage() {
   const { data: ciStatuses } = useCIStatuses(prs, prs.length > 0);
   // Lazy approval/review status — kicks off once PR list is loaded
   const { data: approvalStatuses } = useApprovalStatuses(prs, prs.length > 0);
+  // Lazy conflict detection + size data — one pulls.get batch covers both
+  const { data: prDetails } = useConflictStatuses(prs, prs.length > 0);
+  const conflictStatuses = prDetails?.conflicts;
+  const sizeTotals = prDetails?.sizeTotals;
 
   // Unique repos for the filter dropdown
   const repos = useMemo(() => {
@@ -177,6 +182,17 @@ export function PRListPage() {
         }
       }
     }
+
+    // Also flag: file conflicts with another open PR in the same repo
+    if (conflictStatuses) {
+      for (const pr of openPRs) {
+        if (placed.has(pr.id) || pr.draft) continue;
+        if (conflictStatuses.has(pr.id)) {
+          attention.push(pr);
+          placed.add(pr.id);
+        }
+      }
+    }
     attention.sort(sortByUpdated);
 
     // Pass 2 — Review requested from me
@@ -190,11 +206,11 @@ export function PRListPage() {
     reviewRequested.sort(sortByUpdated);
 
     // Pass 3 — My open PRs (incl. drafts I authored)
+    // Always shown here even if already placed in another section (e.g. Needs Attention)
     for (const pr of openPRs) {
-      if (placed.has(pr.id)) continue;
       if (userLogin && pr.user.login === userLogin) {
-        if (pr.draft) drafts.push(pr);
-        else mine.push(pr);
+        if (pr.draft) { if (!drafts.includes(pr)) drafts.push(pr); }
+        else { if (!mine.includes(pr)) mine.push(pr); }
         placed.add(pr.id);
       }
     }
@@ -214,7 +230,7 @@ export function PRListPage() {
     }
 
     return { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge };
-  }, [filtered, ciStatuses, approvalStatuses, userLogin, staleDaysThreshold]);
+  }, [filtered, ciStatuses, approvalStatuses, conflictStatuses, userLogin, staleDaysThreshold]);
 
   const totalOpen = allOpen.length + drafts.length;
 
@@ -527,6 +543,8 @@ export function PRListPage() {
                     prs={readyToMerge}
                     ciStatuses={ciStatuses}
                     approvalStatuses={approvalStatuses}
+                    conflictStatuses={conflictStatuses}
+                    sizeTotals={sizeTotals}
                     accent="green"
                     defaultOpen
                     showRepo={showRepoColumn}
@@ -537,11 +555,13 @@ export function PRListPage() {
                 <PRSection
                   id="needs-attention"
                   title="Needs Attention"
-                  subtitle={`CI failing · changes requested · or no reviewer assigned, open >${staleDaysThreshold}d`}
+                  subtitle={`CI failing · changes requested · file conflicts · or no reviewer >${staleDaysThreshold}d`}
                   icon={<AlertTriangle className="h-4 w-4" />}
                   prs={attention}
                   ciStatuses={ciStatuses}
                   approvalStatuses={approvalStatuses}
+                  conflictStatuses={conflictStatuses}
+                  sizeTotals={sizeTotals}
                   accent="red"
                   defaultOpen
                   showRepo={showRepoColumn}
@@ -556,6 +576,8 @@ export function PRListPage() {
                   prs={reviewRequested}
                   ciStatuses={ciStatuses}
                   approvalStatuses={approvalStatuses}
+                  conflictStatuses={conflictStatuses}
+                  sizeTotals={sizeTotals}
                   accent="blue"
                   defaultOpen
                   showRepo={showRepoColumn}
@@ -570,6 +592,8 @@ export function PRListPage() {
                   prs={mine}
                   ciStatuses={ciStatuses}
                   approvalStatuses={approvalStatuses}
+                  conflictStatuses={conflictStatuses}
+                  sizeTotals={sizeTotals}
                   accent="green"
                   defaultOpen
                   showRepo={showRepoColumn}
@@ -584,6 +608,8 @@ export function PRListPage() {
                   prs={allOpen}
                   ciStatuses={ciStatuses}
                   approvalStatuses={approvalStatuses}
+                  conflictStatuses={conflictStatuses}
+                  sizeTotals={sizeTotals}
                   accent="slate"
                   defaultOpen={false}
                   showRepo={showRepoColumn}
@@ -598,6 +624,8 @@ export function PRListPage() {
                     icon={<GitPullRequestDraft className="h-4 w-4" />}
                     prs={drafts}
                     ciStatuses={ciStatuses}
+                    conflictStatuses={conflictStatuses}
+                    sizeTotals={sizeTotals}
                     accent="slate"
                     defaultOpen={false}
                     showRepo={showRepoColumn}

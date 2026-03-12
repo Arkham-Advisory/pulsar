@@ -1,7 +1,9 @@
 import { cn } from '../../lib/utils';
 import { capture } from '../../lib/analytics';
+import { getPRSizeLabel } from '../../lib/metrics';
 import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   CheckCircle2,
   XCircle,
@@ -12,6 +14,7 @@ import {
   ExternalLink,
   GitMerge,
   XOctagon,
+  GitFork,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -23,6 +26,8 @@ interface Props {
   highlight?: boolean;
   section?: string;
   onSelect?: () => void;
+  hasConflict?: boolean;
+  sizeTotal?: number; // additions + deletions; undefined = not yet loaded
 }
 
 const CI_ICON = {
@@ -42,7 +47,15 @@ function getLabelStyle(color: string) {
   return `background-color:#${color};color:${(0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000' : '#fff'}`;
 }
 
-export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect }: Props) {
+const SIZE_STYLES: Record<string, string> = {
+  Tiny:   'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+  Small:  'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400',
+  Medium: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+  Large:  'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+  Huge:   'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+};
+
+export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect, hasConflict, sizeTotal }: Props) {
   const age = formatDistanceToNowStrict(new Date(pr.updated_at), { addSuffix: false });
   const isOld = (Date.now() - new Date(pr.updated_at).getTime()) > 1000 * 60 * 60 * 24 * 7;
 
@@ -71,18 +84,36 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
         highlight && 'bg-amber-50/30 dark:bg-amber-900/10'
       )}
     >
-      {/* CI Status */}
+      {/* CI Status — crossfades between states */}
       <div className="w-4 shrink-0 flex items-center justify-center">
-        {CI_ICON[ciStatus]}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={ciStatus}
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            transition={{ duration: 0.15 }}
+            className="flex items-center justify-center"
+          >
+            {CI_ICON[ciStatus]}
+          </motion.span>
+        </AnimatePresence>
       </div>
 
-      {/* Repo + number */}
+      {/* Repo + number — trim repo name from the start so the tail stays readable */}
       {showRepo && (
-        <div className="w-52 shrink-0 hidden md:block min-w-0">
-          <span className="text-xs text-slate-600 dark:text-slate-400 truncate block" title={pr.repo}>
-            {pr.repo.split('/')[1]}
-            <span className="ml-1 text-slate-400 dark:text-slate-600">#{pr.number}</span>
-          </span>
+        <div className="w-48 shrink-0 hidden md:block min-w-0">
+          {(() => {
+            const name = pr.repo.split('/')[1];
+            const MAX = 18;
+            const display = name.length > MAX ? '\u2026' + name.slice(name.length - MAX) : name;
+            return (
+              <span className="text-xs text-slate-600 dark:text-slate-400 block truncate" title={`${pr.repo} #${pr.number}`}>
+                {display}
+                <span className="ml-1 text-slate-400 dark:text-slate-600">#{pr.number}</span>
+              </span>
+            );
+          })()}
         </div>
       )}
       {!showRepo && (
@@ -113,19 +144,49 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
         </a>
         <ExternalLink className="h-3 w-3 text-slate-300 dark:text-slate-600 group-hover:text-brand-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-        {/* Approval badge */}
-        {approvalStatus === 'approved' && ciStatus !== 'failure' && (
-          <span className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
-            <GitMerge className="h-2.5 w-2.5" />
-            Ready
-          </span>
-        )}
-        {approvalStatus === 'changes_requested' && (
-          <span className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
-            <XOctagon className="h-2.5 w-2.5" />
-            Changes req.
-          </span>
-        )}
+        {/* Status badges — fade in/out when approval / conflict state changes */}
+        <AnimatePresence initial={false}>
+          {approvalStatus === 'approved' && ciStatus !== 'failure' && (
+            <motion.span
+              key="ready"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.18 }}
+              className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
+            >
+              <GitMerge className="h-2.5 w-2.5" />
+              Ready
+            </motion.span>
+          )}
+          {approvalStatus === 'changes_requested' && (
+            <motion.span
+              key="changes"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.18 }}
+              className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
+            >
+              <XOctagon className="h-2.5 w-2.5" />
+              Changes req.
+            </motion.span>
+          )}
+          {hasConflict && (
+            <motion.span
+              key="conflict"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.18 }}
+              className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800"
+              title="This PR has a merge conflict (reported by GitHub)"
+            >
+              <GitFork className="h-2.5 w-2.5" />
+              Conflict
+            </motion.span>
+          )}
+        </AnimatePresence>
 
         {/* Labels — inline with title on small screens */}
         <div className="hidden sm:flex items-center gap-1 shrink-0 ml-1">
@@ -143,6 +204,24 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
           )}
         </div>
       </div>
+
+      {/* PR size badge — shown once pulls.get data has loaded (sizeTotal = additions+deletions) */}
+      {(() => {
+        if (sizeTotal === undefined) {
+          return <div className="hidden sm:block w-14 shrink-0" />;
+        }
+        const sizeLabel = getPRSizeLabel(sizeTotal, 0);
+        return (
+          <div className="hidden sm:flex w-14 shrink-0 justify-start">
+            <span
+              title={`${sizeTotal} line${sizeTotal === 1 ? '' : 's'} changed`}
+              className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none cursor-default', SIZE_STYLES[sizeLabel])}
+            >
+              {sizeLabel}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Author */}
       <div className="hidden sm:flex items-center gap-1.5 w-28 shrink-0">
@@ -187,9 +266,9 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
         ) : null}
       </div>
 
-      {/* Age */}
+      {/* Age — colour transition when staleness changes */}
       <div className="w-16 shrink-0 text-right">
-        <span className={cn('text-xs', isOld ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400')}>
+        <span className={cn('text-xs transition-colors duration-700', isOld ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400')}>
           {age}
         </span>
       </div>

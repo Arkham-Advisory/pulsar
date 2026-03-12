@@ -446,6 +446,53 @@ export async function fetchApprovalStatuses(
   return result;
 }
 
+// Fetch the GitHub-computed mergeable status for each open non-draft PR.
+// Batch result for open PRs: mergeable status + size totals in one set of pulls.get calls.
+export interface PRBatchDetails {
+  conflicts: Map<number, boolean>;
+  sizeTotals: Map<number, number>; // additions + deletions per PR id
+}
+
+// Fetch per-PR details (mergeable status + size) for open non-draft PRs in one batch.
+// Uses pulls.get — returns both sets of data with no extra API calls vs doing them separately.
+export async function fetchPRBatchDetails(
+  pat: string,
+  prs: PullRequest[],
+  signal?: AbortSignal
+): Promise<PRBatchDetails> {
+  const octokit = getOctokit(pat);
+  const conflicts = new Map<number, boolean>();
+  const sizeTotals = new Map<number, number>();
+  const openPRs = prs.filter((p) => p.state === 'open' && !p.draft).slice(0, 100);
+  const BATCH = 8;
+  for (let i = 0; i < openPRs.length; i += BATCH) {
+    if (signal?.aborted) break;
+    await Promise.all(
+      openPRs.slice(i, i + BATCH).map(async (pr) => {
+        const [owner, repo] = pr.repo.split('/');
+        try {
+          const { data } = await octokit.pulls.get({ owner, repo, pull_number: pr.number });
+          if (data.mergeable === false) conflicts.set(pr.id, true);
+          sizeTotals.set(pr.id, (data.additions ?? 0) + (data.deletions ?? 0));
+        } catch {
+          // Leave out of maps — no badge / no size shown
+        }
+      })
+    );
+  }
+  return { conflicts, sizeTotals };
+}
+
+/** @deprecated Use fetchPRBatchDetails instead */
+export async function fetchMergeableStatuses(
+  pat: string,
+  prs: PullRequest[],
+  signal?: AbortSignal
+): Promise<Map<number, boolean>> {
+  const { conflicts } = await fetchPRBatchDetails(pat, prs, signal);
+  return conflicts;
+}
+
 export interface RateLimitBucket {
   limit: number;
   used: number;

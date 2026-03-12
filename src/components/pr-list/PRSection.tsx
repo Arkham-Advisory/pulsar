@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '../../lib/utils';
 import { PRRow } from './PRRow';
 import { useSettingsStore } from '../../store/settings';
@@ -17,6 +18,8 @@ interface Props {
   prs: PullRequest[];
   ciStatuses?: Map<number, PullRequest['ciStatus']>;
   approvalStatuses?: Map<number, ApprovalStatus>;
+  conflictStatuses?: Map<number, boolean>;
+  sizeTotals?: Map<number, number>;
   defaultOpen?: boolean;
   showRepo?: boolean;
   accent?: 'red' | 'amber' | 'green' | 'blue' | 'slate';
@@ -48,6 +51,8 @@ export function PRSection({
   prs,
   ciStatuses,
   approvalStatuses,
+  conflictStatuses,
+  sizeTotals,
   defaultOpen = true,
   showRepo = true,
   accent = 'slate',
@@ -86,58 +91,92 @@ export function PRSection({
             </span>
           )}
         </span>
-        <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', ACCENT_BADGE[accent])}>
-          {prs.length}
-        </span>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={prs.length}
+            initial={{ y: -6, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 6, opacity: 0 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className={cn('text-xs font-semibold px-2 py-0.5 rounded-full', ACCENT_BADGE[accent])}
+          >
+            {prs.length}
+          </motion.span>
+        </AnimatePresence>
       </button>
 
-      {/* Column headers (only when open) */}
-      {open && prs.length > 0 && (
-        <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
-          <div className="w-4 shrink-0" />
-          {showRepo && <div className="w-52 hidden md:block text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Repo</div>}
-          {!showRepo && <div className="w-16 hidden md:block text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">#</div>}
-          <div className="flex-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Title</div>
-          <div className="hidden sm:block w-28 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Author</div>
-          <div className="hidden md:block w-16 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Reviewers</div>
-          <div className="w-16 text-right text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Updated</div>
-        </div>
-      )}
+      {/* Section body: column headers + rows — animated open/close */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            {/* Column headers */}
+            {prs.length > 0 && (
+              <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
+                <div className="w-4 shrink-0" />
+              {showRepo && <div className="w-48 hidden md:block text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Repo</div>}
+              {!showRepo && <div className="w-16 hidden md:block text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">#</div>}
+              <div className="flex-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Title</div>
+              <div className="hidden sm:block w-14 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Size</div>
+                <div className="hidden sm:block w-28 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Author</div>
+                <div className="hidden md:block w-16 text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Reviewers</div>
+                <div className="w-16 text-right text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Updated</div>
+              </div>
+            )}
 
-      {/* PR rows */}
-      {open && (
-        <div className="bg-white dark:bg-slate-900">
-          {prs.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-slate-400">
-              {emptyMessage ?? 'No pull requests'}
-            </div>
-          ) : (
-            <>
-              {visible.map((pr) => (
-                <PRRow
-                  key={pr.id}
-                  pr={pr}
-                  ciStatus={ciStatuses?.get(pr.id)}
-                  approvalStatus={approvalStatuses?.get(pr.id)}
-                  showRepo={showRepo}
-                  section={id}
-                  onSelect={onSelectPR ? () => onSelectPR(pr) : undefined}
-                />
-              ))}
-              {hasMore && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.preventDefault(); setPage((p) => p + 1); }}
-                  className="w-full py-3 text-xs text-brand-600 dark:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors border-t border-slate-100 dark:border-slate-800"
-                >
-                  Show {Math.min(PAGE_SIZE, prs.length - visible.length)} more
-                  <span className="text-slate-400 ml-1">({prs.length - visible.length} remaining)</span>
-                </button>
+            {/* PR rows */}
+            <div className="bg-white dark:bg-slate-900">
+              {prs.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-slate-400">
+                  {emptyMessage ?? 'No pull requests'}
+                </div>
+              ) : (
+                <>
+                  <AnimatePresence initial={false}>
+                    {visible.map((pr) => (
+                      <motion.div
+                        key={pr.id}
+                        layout="position"
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: 24, transition: { duration: 0.15 } }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                      >
+                        <PRRow
+                          pr={pr}
+                          ciStatus={ciStatuses?.get(pr.id)}
+                          approvalStatus={approvalStatuses?.get(pr.id)}
+                          hasConflict={conflictStatuses?.get(pr.id) === true}
+                          sizeTotal={sizeTotals?.get(pr.id)}
+                          showRepo={showRepo}
+                          section={id}
+                          onSelect={onSelectPR ? () => onSelectPR(pr) : undefined}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                  {hasMore && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); setPage((p) => p + 1); }}
+                      className="w-full py-3 text-xs text-brand-600 dark:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors border-t border-slate-100 dark:border-slate-800"
+                    >
+                      Show {Math.min(PAGE_SIZE, prs.length - visible.length)} more
+                      <span className="text-slate-400 ml-1">({prs.length - visible.length} remaining)</span>
+                    </button>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
-      )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
