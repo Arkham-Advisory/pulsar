@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { PullRequest, PRReview } from '../../types/github';
 import { useSettingsStore } from '../../store/settings';
-import { getSinceDate, computeMetrics, buildWeeklyData, buildCycleTimeData, buildAuthorStats, buildReviewerStats, buildSizeDistribution, buildWeeklyDigest, formatDuration, buildContributorHeatmap } from '../../lib/metrics';
+import { getSinceDate, computeMetrics, buildWeeklyData, buildCycleTimeData, buildAuthorStats, buildReviewerStats, buildSizeDistribution, buildWeeklyDigest, formatDuration, buildContributorHeatmap, buildBottleneckFunnel, buildSLAHeatmap } from '../../lib/metrics';
 import { MetricCard } from './MetricCard';
 import { StalePRsCard } from './StalePRsCard';
 import { WaitingReviewCard } from './WaitingReviewCard';
@@ -13,6 +13,8 @@ import { PRSizeChart } from '../charts/PRSizeChart';
 import { AuthorActivityTable } from '../charts/AuthorActivityTable';
 import { ContributorHeatmap } from '../charts/ContributorHeatmap';
 import { WeeklyDigestCard } from './WeeklyDigestCard';
+import { BottleneckFunnelChart } from '../charts/BottleneckFunnelChart';
+import { SLAHeatmapChart } from '../charts/SLAHeatmapChart';
 import {
   GitPullRequest,
   GitMerge,
@@ -30,7 +32,7 @@ interface Props {
 }
 
 export function Dashboard({ prs, reviews, loading }: Props) {
-  const { timeRange, staleDaysThreshold } = useSettingsStore();
+  const { timeRange, staleDaysThreshold, slaPolicy } = useSettingsStore();
   const since = useMemo(() => getSinceDate(timeRange), [timeRange]);
 
   const metrics = useMemo(
@@ -51,6 +53,8 @@ export function Dashboard({ prs, reviews, loading }: Props) {
     () => buildContributorHeatmap(prs, reviews, since),
     [prs, reviews, since]
   );
+  const bottleneckData = useMemo(() => buildBottleneckFunnel(prs, reviews), [prs, reviews]);
+  const slaHeatmapData = useMemo(() => buildSLAHeatmap(prs, reviews), [prs, reviews]);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -133,6 +137,12 @@ export function Dashboard({ prs, reviews, loading }: Props) {
         {/* Author Activity Table */}
         <div className="grid grid-cols-1 gap-4">
           <AuthorActivityTable data={authorStats} loading={loading} />
+        </div>
+
+        {/* Bottleneck Funnel + SLA Heatmap */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <BottleneckFunnelChart data={bottleneckData} loading={loading} />
+          <SLAHeatmapChart data={slaHeatmapData} slaPolicy={slaPolicy} loading={loading} />
         </div>
 
         {/* Contributor Heatmap */}

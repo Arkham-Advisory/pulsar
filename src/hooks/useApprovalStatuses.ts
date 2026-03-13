@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSettingsStore } from '../store/settings';
-import { fetchApprovalStatuses } from '../services/github';
+import { fetchApprovalStatuses, type ApprovalStatusResult } from '../services/github';
 import type { PullRequest } from '../types/github';
 
 export function useApprovalStatuses(prs: PullRequest[], enabled: boolean) {
@@ -12,7 +12,7 @@ export function useApprovalStatuses(prs: PullRequest[], enabled: boolean) {
     .map((p) => p.id)
     .join(',');
 
-  return useQuery({
+  return useQuery<ApprovalStatusResult>({
     queryKey: ['approval-statuses', pat, openPRIds],
     queryFn: async ({ signal }) => fetchApprovalStatuses(pat, prs, signal),
     enabled: enabled && !!pat && prs.length > 0,

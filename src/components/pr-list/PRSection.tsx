@@ -20,6 +20,7 @@ interface Props {
   approvalStatuses?: Map<number, ApprovalStatus>;
   conflictStatuses?: Map<number, boolean>;
   sizeTotals?: Map<number, number>;
+  roundTripCounts?: Map<number, number>;
   defaultOpen?: boolean;
   showRepo?: boolean;
   accent?: 'red' | 'amber' | 'green' | 'blue' | 'slate' | 'brand';
@@ -61,6 +62,7 @@ export function PRSection({
   approvalStatuses,
   conflictStatuses,
   sizeTotals,
+  roundTripCounts,
   defaultOpen = true,
   showRepo = true,
   accent = 'slate',
@@ -182,6 +184,7 @@ export function PRSection({
                           approvalStatus={approvalStatuses?.get(pr.id)}
                           hasConflict={conflictStatuses?.get(pr.id) === true}
                           sizeTotal={sizeTotals?.get(pr.id)}
+                          roundTrips={roundTripCounts?.get(pr.id)}
                           showRepo={showRepo}
                           section={id}
                           onSelect={onSelectPR ? () => onSelectPR(pr) : undefined}

@@ -17,8 +17,10 @@ import {
   Building2,
   Filter,
   GitFork,
+  Target,
+  Link2,
 } from 'lucide-react';
-import type { RepoFilterEntry } from '../../types/settings';
+import type { RepoFilterEntry, IssueTrackerConfig } from '../../types/settings';
 
 interface Props {
   onClose: () => void;
@@ -63,11 +65,14 @@ export function SettingsPanel({ onClose }: Props) {
     setTimeRange,
     staleDaysThreshold,
     setStaleDaysThreshold,
-    darkMode,
-    toggleDarkMode,
     refreshIntervalMinutes,
     setRefreshInterval,
     userLogin,
+    slaPolicy,
+    setSLAPolicy,
+    issueTrackers,
+    addIssueTracker,
+    removeIssueTracker,
   } = useSettingsStore();
 
   const [localPat, setLocalPat] = useState(pat);
@@ -85,6 +90,52 @@ export function SettingsPanel({ onClose }: Props) {
   const [checkingCount, setCheckingCount] = useState(false);
   type PendingOrg = { owner: string; count: number; id: string };
   const [pendingOrg, setPendingOrg] = useState<PendingOrg | null>(null);
+
+  // Issue tracker add form
+  type TrackerType = IssueTrackerConfig['type'];
+  const [trackerType, setTrackerType] = useState<TrackerType>('github');
+  const [trackerName, setTrackerName] = useState('');
+  const [trackerBaseUrl, setTrackerBaseUrl] = useState('');
+  const [trackerProjectKey, setTrackerProjectKey] = useState('');
+  const [trackerPattern, setTrackerPattern] = useState('');
+  const [trackerUrlTemplate, setTrackerUrlTemplate] = useState('');
+  const [trackerError, setTrackerError] = useState('');
+
+  const handleAddTracker = useCallback(() => {
+    setTrackerError('');
+    const name = trackerName.trim();
+    const baseUrl = trackerBaseUrl.trim();
+    if (!name) { setTrackerError('Name is required'); return; }
+    if (trackerType !== 'github' && !baseUrl) { setTrackerError('Base URL is required'); return; }
+    if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      setTrackerError('Base URL must start with http:// or https://');
+      return;
+    }
+    if (trackerType === 'jira' && !trackerProjectKey.trim()) {
+      setTrackerError('Project key is required for Jira');
+      return;
+    }
+    if (trackerType === 'custom') {
+      if (!trackerPattern.trim()) { setTrackerError('Pattern is required for custom tracker'); return; }
+      if (!trackerUrlTemplate.trim()) { setTrackerError('URL template is required'); return; }
+      if (!trackerUrlTemplate.includes('{{key}}')) { setTrackerError('URL template must contain {{key}}'); return; }
+      try { new RegExp(trackerPattern); } catch { setTrackerError('Invalid regex pattern'); return; }
+    }
+    const tracker: IssueTrackerConfig = {
+      id: crypto.randomUUID(),
+      name,
+      type: trackerType,
+      baseUrl: trackerType === 'github' ? 'https://github.com' : baseUrl,
+      ...(trackerType === 'jira' ? { projectKey: trackerProjectKey.trim().toUpperCase() } : {}),
+      ...(trackerType === 'custom' ? { pattern: trackerPattern.trim(), urlTemplate: trackerUrlTemplate.trim() } : {}),
+    };
+    addIssueTracker(tracker);
+    setTrackerName('');
+    setTrackerBaseUrl('');
+    setTrackerProjectKey('');
+    setTrackerPattern('');
+    setTrackerUrlTemplate('');
+  }, [trackerType, trackerName, trackerBaseUrl, trackerProjectKey, trackerPattern, trackerUrlTemplate, addIssueTracker]);
 
   const handleValidatePAT = useCallback(async () => {
     if (!localPat.trim()) return;
@@ -497,27 +548,235 @@ export function SettingsPanel({ onClose }: Props) {
                 </div>
               </div>
 
-              {/* Dark mode toggle */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-medium text-slate-600 dark:text-slate-400">Dark mode</div>
+            </div>
+          </section>
+
+          {/* SLA Targets */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Target className="h-4 w-4 text-slate-400" />
+              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                SLA Targets
+              </h3>
+            </div>
+            <div className="space-y-5">
+              {/* First Review */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Open → First review
+                  </label>
+                  <span className="text-xs font-semibold text-brand-600 dark:text-brand-400 tabular-nums">
+                    {slaPolicy.firstReviewHours}h
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={toggleDarkMode}
-                  className={cn(
-                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                    darkMode ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm',
-                      darkMode ? 'translate-x-6' : 'translate-x-1'
-                    )}
-                  />
-                </button>
+                <input
+                  type="range"
+                  min={1}
+                  max={48}
+                  value={slaPolicy.firstReviewHours}
+                  onChange={e => setSLAPolicy({ ...slaPolicy, firstReviewHours: Number(e.target.value) })}
+                  className="w-full accent-brand-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                  <span>1h</span><span>48h</span>
+                </div>
               </div>
+              {/* Approval */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    First review → Approval
+                  </label>
+                  <span className="text-xs font-semibold text-brand-600 dark:text-brand-400 tabular-nums">
+                    {slaPolicy.approvalHours}h
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={72}
+                  value={slaPolicy.approvalHours}
+                  onChange={e => setSLAPolicy({ ...slaPolicy, approvalHours: Number(e.target.value) })}
+                  className="w-full accent-brand-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                  <span>1h</span><span>72h</span>
+                </div>
+              </div>
+              {/* Merge */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Approval → Merge
+                  </label>
+                  <span className="text-xs font-semibold text-brand-600 dark:text-brand-400 tabular-nums">
+                    {slaPolicy.mergeHours}h
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={96}
+                  value={slaPolicy.mergeHours}
+                  onChange={e => setSLAPolicy({ ...slaPolicy, mergeHours: Number(e.target.value) })}
+                  className="w-full accent-brand-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                  <span>1h</span><span>96h</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Issue Trackers */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Link2 className="h-4 w-4 text-slate-400" />
+              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Issue Trackers
+              </h3>
+            </div>
+
+            {/* Existing trackers */}
+            {issueTrackers.length > 0 && (
+              <div className="mb-4 space-y-2">
+                {issueTrackers.map(tracker => (
+                  <div
+                    key={tracker.id}
+                    className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+                        tracker.type === 'github' && 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+                        tracker.type === 'jira' && 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+                        tracker.type === 'custom' && 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
+                      )}>
+                        {tracker.type}
+                      </span>
+                      <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-300">
+                        {tracker.name}
+                      </span>
+                      {tracker.projectKey && (
+                        <span className="shrink-0 text-xs text-slate-400">{tracker.projectKey}-N</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeIssueTracker(tracker.id)}
+                      className="ml-2 shrink-0 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                      title="Remove tracker"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add tracker form */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Add a tracker to auto-link issue references in PR descriptions.</p>
+
+              {/* Type selector */}
+              <div className="flex gap-1.5">
+                {(['github', 'jira', 'custom'] as const).map(t => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTrackerType(t)}
+                    className={cn(
+                      'flex-1 rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors',
+                      trackerType === t
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+
+              {/* Name */}
+              <input
+                type="text"
+                placeholder="Display name (e.g. My Jira)"
+                value={trackerName}
+                onChange={e => setTrackerName(e.target.value)}
+                className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+
+              {/* GitHub: no extra fields needed */}
+              {trackerType === 'github' && (
+                <p className="text-[11px] text-slate-400">
+                  Auto-links <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">#N</code> references to your GitHub repos.
+                </p>
+              )}
+
+              {/* Jira: base URL + project key */}
+              {trackerType === 'jira' && (
+                <>
+                  <input
+                    type="url"
+                    placeholder="Base URL (e.g. https://yourteam.atlassian.net)"
+                    value={trackerBaseUrl}
+                    onChange={e => setTrackerBaseUrl(e.target.value)}
+                    className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Project key (e.g. MYPROJ)"
+                    value={trackerProjectKey}
+                    onChange={e => setTrackerProjectKey(e.target.value.toUpperCase())}
+                    className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </>
+              )}
+
+              {/* Custom: base URL + regex pattern + URL template */}
+              {trackerType === 'custom' && (
+                <>
+                  <input
+                    type="url"
+                    placeholder="Base URL (optional)"
+                    value={trackerBaseUrl}
+                    onChange={e => setTrackerBaseUrl(e.target.value)}
+                    className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Regex pattern (e.g. LIN-\d+)"
+                    value={trackerPattern}
+                    onChange={e => setTrackerPattern(e.target.value)}
+                    className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="URL template (e.g. https://linear.app/issue/{{key}})"
+                    value={trackerUrlTemplate}
+                    onChange={e => setTrackerUrlTemplate(e.target.value)}
+                    className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    Use <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">{'{{key}}'}</code> in the URL template as the matched key placeholder.
+                  </p>
+                </>
+              )}
+
+              {trackerError && (
+                <p className="text-xs text-red-500 dark:text-red-400">{trackerError}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleAddTracker}
+                className="w-full rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 transition-colors disabled:opacity-50"
+              >
+                Add tracker
+              </button>
             </div>
           </section>
         </div>

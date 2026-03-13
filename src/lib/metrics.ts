@@ -9,7 +9,10 @@ import type {
   PRSizeCategory,
   WeeklyDigest,
   HeatmapContributor,
+  BottleneckPhaseData,
+  SLAHeatmapRow,
 } from '../types/github';
+import type { SLAPolicy } from '../types/settings';
 import {
   format,
   differenceInHours,
@@ -468,4 +471,124 @@ export function buildContributorHeatmap(
     .filter((c) => c.totalActivity > 0)
     .sort((a, b) => b.totalActivity - a.totalActivity)
     .slice(0, 12);
+}
+
+// ─── Bottleneck Funnel ────────────────────────────────────────────────────────
+// Computes average time spent in each phase for merged PRs:
+//   open → first review → first approval → merged
+export function buildBottleneckFunnel(
+  prs: PullRequest[],
+  reviews: PRReview[]
+): BottleneckPhaseData[] {
+  const reviewsByPR = new Map<string, PRReview[]>();
+  for (const r of reviews) {
+    const key = `${r.repo}#${r.pr_number}`;
+    if (!reviewsByPR.has(key)) reviewsByPR.set(key, []);
+    reviewsByPR.get(key)!.push(r);
+  }
+
+  const phase1: number[] = []; // open → first review
+  const phase2: number[] = []; // first review → first approval
+  const phase3: number[] = []; // first approval → merge
+
+  for (const pr of prs.filter((p) => p.merged && p.merged_at)) {
+    const key = `${pr.repo}#${pr.number}`;
+    const prReviews = reviewsByPR.get(key) ?? [];
+    if (prReviews.length === 0) continue;
+
+    const sorted = [...prReviews].sort(
+      (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+    );
+    const firstReview = sorted[0];
+    const firstReviewAt = new Date(firstReview.submitted_at);
+
+    const h1 = differenceInHours(firstReviewAt, new Date(pr.created_at));
+    if (h1 >= 0) phase1.push(h1);
+
+    const firstApproval = sorted.find((r) => r.state === 'APPROVED');
+    if (firstApproval) {
+      const firstApprovalAt = new Date(firstApproval.submitted_at);
+      const h2 = differenceInHours(firstApprovalAt, firstReviewAt);
+      if (h2 >= 0) phase2.push(h2);
+      const h3 = differenceInHours(new Date(pr.merged_at!), firstApprovalAt);
+      if (h3 >= 0) phase3.push(h3);
+    }
+  }
+
+  const avg = (arr: number[]) =>
+    arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+  return [
+    { phase: 'Open → 1st Review', avgHours: avg(phase1), count: phase1.length },
+    { phase: '1st Review → Approval', avgHours: avg(phase2), count: phase2.length },
+    { phase: 'Approval → Merge', avgHours: avg(phase3), count: phase3.length },
+  ];
+}
+
+// ─── SLA Heatmap ─────────────────────────────────────────────────────────────
+// Per-author average time per phase, for color-coding against SLA targets.
+export function buildSLAHeatmap(
+  prs: PullRequest[],
+  reviews: PRReview[],
+): SLAHeatmapRow[] {
+  const reviewsByPR = new Map<string, PRReview[]>();
+  for (const r of reviews) {
+    const key = `${r.repo}#${r.pr_number}`;
+    if (!reviewsByPR.has(key)) reviewsByPR.set(key, []);
+    reviewsByPR.get(key)!.push(r);
+  }
+
+  type AuthorBuckets = {
+    avatar_url: string;
+    phase1: number[];
+    phase2: number[];
+    phase3: number[];
+  };
+  const authorMap = new Map<string, AuthorBuckets>();
+
+  for (const pr of prs.filter((p) => p.merged && p.merged_at)) {
+    const key = `${pr.repo}#${pr.number}`;
+    const prReviews = reviewsByPR.get(key) ?? [];
+    if (prReviews.length === 0) continue;
+
+    const login = pr.user.login;
+    if (!authorMap.has(login)) {
+      authorMap.set(login, { avatar_url: pr.user.avatar_url, phase1: [], phase2: [], phase3: [] });
+    }
+    const buckets = authorMap.get(login)!;
+
+    const sorted = [...prReviews].sort(
+      (a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+    );
+    const firstReview = sorted[0];
+    const firstReviewAt = new Date(firstReview.submitted_at);
+
+    const h1 = differenceInHours(firstReviewAt, new Date(pr.created_at));
+    if (h1 >= 0) buckets.phase1.push(h1);
+
+    const firstApproval = sorted.find((r) => r.state === 'APPROVED');
+    if (firstApproval) {
+      const firstApprovalAt = new Date(firstApproval.submitted_at);
+      const h2 = differenceInHours(firstApprovalAt, firstReviewAt);
+      if (h2 >= 0) buckets.phase2.push(h2);
+      const h3 = differenceInHours(new Date(pr.merged_at!), firstApprovalAt);
+      if (h3 >= 0) buckets.phase3.push(h3);
+    }
+  }
+
+  const avg = (arr: number[]): number | null =>
+    arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+  return Array.from(authorMap.entries())
+    .map(([login, b]) => ({
+      login,
+      avatar_url: b.avatar_url,
+      openToFirstReview: avg(b.phase1),
+      firstReviewToApproval: avg(b.phase2),
+      approvalToMerge: avg(b.phase3),
+      prCount: b.phase1.length,
+    }))
+    .filter((r) => r.prCount > 0)
+    .sort((a, b) => b.prCount - a.prCount)
+    .slice(0, 15);
 }

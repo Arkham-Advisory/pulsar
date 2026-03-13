@@ -255,6 +255,7 @@ export async function fetchPRsForRepo(
         base: { ref: pr.base.ref },
         head: { ref: pr.head.ref, sha: pr.head.sha },
         ciStatus: 'unknown' as const,
+        body: pr.body ?? null,
       }));
 
       prs.push(...mapped);
@@ -429,14 +430,21 @@ export async function fetchCIStatuses(
 
 export type ApprovalStatus = 'approved' | 'changes_requested' | 'none';
 
+export interface ApprovalStatusResult {
+  approvals: Map<number, ApprovalStatus>;
+  /** Number of CHANGES_REQUESTED review events per PR — a proxy for review round-trips */
+  roundTrips: Map<number, number>;
+}
+
 // Fetch review approval state for open PRs in batches of 8
 export async function fetchApprovalStatuses(
   pat: string,
   prs: PullRequest[],
   signal?: AbortSignal
-): Promise<Map<number, ApprovalStatus>> {
+): Promise<ApprovalStatusResult> {
   const octokit = getOctokit(pat);
-  const result = new Map<number, ApprovalStatus>();
+  const approvals = new Map<number, ApprovalStatus>();
+  const roundTrips = new Map<number, number>();
   const openPRs = prs.filter((p) => p.state === 'open' && !p.draft).slice(0, 100);
   const BATCH = 8;
   for (let i = 0; i < openPRs.length; i += BATCH) {
@@ -448,6 +456,8 @@ export async function fetchApprovalStatuses(
           const { data } = await octokit.pulls.listReviews({
             owner, repo, pull_number: pr.number, per_page: 100,
           });
+          // Count round-trips: total CHANGES_REQUESTED events (not deduplicated)
+          roundTrips.set(pr.id, data.filter((r) => r.state === 'CHANGES_REQUESTED').length);
           // Take the latest review per reviewer
           const latest = new Map<string, string>();
           for (const r of data) {
@@ -456,19 +466,19 @@ export async function fetchApprovalStatuses(
           }
           const states = Array.from(latest.values());
           if (states.some((s) => s === 'CHANGES_REQUESTED')) {
-            result.set(pr.id, 'changes_requested');
+            approvals.set(pr.id, 'changes_requested');
           } else if (states.some((s) => s === 'APPROVED')) {
-            result.set(pr.id, 'approved');
+            approvals.set(pr.id, 'approved');
           } else {
-            result.set(pr.id, 'none');
+            approvals.set(pr.id, 'none');
           }
         } catch {
-          result.set(pr.id, 'none');
+          approvals.set(pr.id, 'none');
         }
       })
     );
   }
-  return result;
+  return { approvals, roundTrips };
 }
 
 // Fetch the GitHub-computed mergeable status for each open non-draft PR.

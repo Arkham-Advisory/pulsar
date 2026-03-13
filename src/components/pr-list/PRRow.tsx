@@ -18,8 +18,11 @@ import {
   GitFork,
   Pin,
   Terminal,
+  FileText,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { IssueRefBadges } from './IssueLinks';
 
 interface Props {
   pr: PullRequest;
@@ -33,6 +36,8 @@ interface Props {
   sizeTotal?: number; // additions + deletions; undefined = not yet loaded
   isPinned?: boolean;
   onTogglePin?: () => void;
+  /** Number of CHANGES_REQUESTED review cycles for this PR */
+  roundTrips?: number;
 }
 
 const CI_ICON = {
@@ -60,7 +65,7 @@ const SIZE_STYLES: Record<string, string> = {
   Huge:   'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 };
 
-export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect, hasConflict, sizeTotal, isPinned, onTogglePin }: Props) {
+export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect, hasConflict, sizeTotal, isPinned, onTogglePin, roundTrips }: Props) {
   const age = formatDistanceToNowStrict(new Date(pr.updated_at), { addSuffix: false });
   const isOld = (Date.now() - new Date(pr.updated_at).getTime()) > 1000 * 60 * 60 * 24 * 7;
 
@@ -158,6 +163,7 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
           {pr.title}
         </a>
         <ExternalLink className="h-3 w-3 text-slate-300 dark:text-slate-600 group-hover:text-brand-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <IssueRefBadges text={pr.title} repo={pr.repo} />
 
         {/* Status badges — fade in/out when approval / conflict state changes */}
         <AnimatePresence initial={false}>
@@ -202,6 +208,33 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
             </motion.span>
           )}
         </AnimatePresence>
+
+        {/* Empty description flag */}
+        {!pr.body && (
+          <span
+            title="No description provided"
+            className="hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+          >
+            <FileText className="h-2.5 w-2.5" />
+            No desc
+          </span>
+        )}
+
+        {/* Review round-trip counter */}
+        {roundTrips !== undefined && roundTrips > 0 && (
+          <span
+            title={`${roundTrips} review round-trip${roundTrips > 1 ? 's' : ''} (changes requested)`}
+            className={cn(
+              'hidden sm:inline-flex items-center gap-1 shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border',
+              roundTrips >= 3
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+            )}
+          >
+            <ArrowLeftRight className="h-2.5 w-2.5" />
+            {roundTrips}
+          </span>
+        )}
 
         {/* Labels — inline with title on small screens */}
         <div className="hidden sm:flex items-center gap-1 shrink-0 ml-1">

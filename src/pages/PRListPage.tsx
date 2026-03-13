@@ -34,6 +34,7 @@ import {
   Share2,
   Pin,
   Users,
+  Inbox,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { PullRequest } from '../types/github';
@@ -59,8 +60,20 @@ import { CSS } from '@dnd-kit/utilities';
 type StateFilter = 'open' | 'merged';
 
 const DEFAULT_SECTION_ORDER = [
-  'ready-to-merge', 'needs-attention', 'review-requested', 'my-prs', 'all-prs', 'drafts',
+  'my-turn', 'ready-to-merge', 'needs-attention', 'review-requested', 'my-prs', 'all-prs', 'drafts',
 ] as const;
+
+// Ensure every known section ID is present in the stored order.
+// Any missing ID is inserted at its canonical default position.
+function normalizeSectionOrder(order: string[]): string[] {
+  const merged = [...order];
+  DEFAULT_SECTION_ORDER.forEach((id, idx) => {
+    if (!merged.includes(id)) {
+      merged.splice(Math.min(idx, merged.length), 0, id);
+    }
+  });
+  return merged;
+}
 
 interface SectionDef {
   id: string;
@@ -79,6 +92,7 @@ interface SortablePRSectionProps {
   approvalStatuses?: Map<number, ApprovalStatus>;
   conflictStatuses?: Map<number, boolean>;
   sizeTotals?: Map<number, number>;
+  roundTripCounts?: Map<number, number>;
   showRepo: boolean;
   onSelectPR: (pr: PullRequest) => void;
   pinnedPRs: string[];
@@ -91,6 +105,7 @@ function SortablePRSection({
   approvalStatuses,
   conflictStatuses,
   sizeTotals,
+  roundTripCounts,
   showRepo,
   onSelectPR,
   pinnedPRs,
@@ -116,6 +131,7 @@ function SortablePRSection({
         approvalStatuses={approvalStatuses}
         conflictStatuses={conflictStatuses}
         sizeTotals={sizeTotals}
+        roundTripCounts={roundTripCounts}
         accent={section.accent}
         defaultOpen={section.defaultOpen}
         showRepo={showRepo}
@@ -165,8 +181,8 @@ export function PRListPage({ onOpenSettings }: Props) {
   const [hideBotPRs, setHideBotPRsLocal] = useState<boolean>(
     () => useSettingsStore.getState().hideBotPRs,
   );
-  const [sectionOrder, setSectionOrderLocal] = useState<string[]>(
-    () => useSettingsStore.getState().sectionOrder,
+  const [sectionOrder, setSectionOrderLocal] = useState<string[]>(() =>
+    normalizeSectionOrder(useSettingsStore.getState().sectionOrder)
   );
 
   const setSelectedRepos = useCallback((repos: string[]) => {
@@ -180,8 +196,9 @@ export function PRListPage({ onOpenSettings }: Props) {
   }, [storeSetHideBotPRs]);
 
   const setSectionOrder = useCallback((order: string[]) => {
-    setSectionOrderLocal(order);
-    storeSetSectionOrder(order);
+    const normalized = normalizeSectionOrder(order);
+    setSectionOrderLocal(normalized);
+    storeSetSectionOrder(normalized);
   }, [storeSetSectionOrder]);
   const { data: prs = [], isLoading, isFetching, progress } = usePRListData();
   const queryClient = useQueryClient();
@@ -402,7 +419,9 @@ export function PRListPage({ onOpenSettings }: Props) {
   // Lazy CI status — kicks off once PR list is loaded
   const { data: ciStatuses } = useCIStatuses(prs, prs.length > 0);
   // Lazy approval/review status — kicks off once PR list is loaded
-  const { data: approvalStatuses } = useApprovalStatuses(prs, prs.length > 0);
+  const { data: approvalData } = useApprovalStatuses(prs, prs.length > 0);
+  const approvalStatuses = approvalData?.approvals;
+  const roundTripCounts = approvalData?.roundTrips;
   // Lazy conflict detection + size data — one pulls.get batch covers both
   const { data: prDetails } = useConflictStatuses(prs, prs.length > 0);
   const conflictStatuses = prDetails?.conflicts;
@@ -444,7 +463,7 @@ export function PRListPage({ onOpenSettings }: Props) {
   }, [prs, search, stateFilter, selectedRepos, hideBotPRs, selectedReviewers]);
 
   // Partition into sections
-  const { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge } = useMemo(() => {
+  const { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge, myTurn } = useMemo(() => {
     const attention: PullRequest[] = [];
     const reviewRequested: PullRequest[] = [];
     const mine: PullRequest[] = [];
@@ -547,7 +566,29 @@ export function PRListPage({ onOpenSettings }: Props) {
       }
     }
 
-    return { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge };
+    // My Turn — PRs needing my direct action
+    const myTurn: PullRequest[] = [];
+    if (userLogin) {
+      // PRs where I'm a requested reviewer (not yet placed above)
+      for (const pr of reviewRequested) {
+        if (!myTurn.some(p => p.id === pr.id)) myTurn.push(pr);
+      }
+      // My own PRs needing action: CI failure, changes requested, or conflict
+      for (const pr of mine) {
+        const ci = ciStatuses?.get(pr.id) ?? pr.ciStatus;
+        const approval = approvalStatuses?.get(pr.id);
+        if (
+          ci === 'failure' ||
+          approval === 'changes_requested' ||
+          conflictStatuses?.has(pr.id)
+        ) {
+          if (!myTurn.some(p => p.id === pr.id)) myTurn.push(pr);
+        }
+      }
+    }
+    myTurn.sort(sortByUpdated);
+
+    return { attention, reviewRequested, mine, allOpen, merged, drafts, readyToMerge, myTurn };
   }, [filtered, ciStatuses, approvalStatuses, conflictStatuses, userLogin, staleDaysThreshold]);
 
   const totalOpen = allOpen.length + drafts.length;
@@ -581,6 +622,16 @@ export function PRListPage({ onOpenSettings }: Props) {
   }, [sectionOrder, setSectionOrder]);
 
   const sectionDefs = useMemo((): SectionDef[] => [
+    {
+      id: 'my-turn',
+      title: 'My Turn',
+      subtitle: 'Review requested · my PRs needing action',
+      icon: <Inbox className="h-4 w-4" />,
+      prs: myTurn,
+      accent: 'brand',
+      defaultOpen: true,
+      emptyMessage: 'Nothing needs your attention right now 🎉',
+    },
     {
       id: 'ready-to-merge',
       title: 'Ready to Merge',
@@ -635,7 +686,7 @@ export function PRListPage({ onOpenSettings }: Props) {
       accent: 'slate',
       defaultOpen: false,
     },
-  ], [readyToMerge, attention, reviewRequested, mine, allOpen, drafts, staleDaysThreshold]);
+  ], [myTurn, readyToMerge, attention, reviewRequested, mine, allOpen, drafts, staleDaysThreshold]);
 
   const orderedSectionDefs = useMemo(() => {
     return [...sectionDefs].sort((a, b) => {
@@ -1091,6 +1142,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                       approvalStatuses={approvalStatuses}
                       conflictStatuses={conflictStatuses}
                       sizeTotals={sizeTotals}
+                      roundTripCounts={roundTripCounts}
                       showRepo={showRepoColumn}
                       onSelectPR={setSelectedPR}
                       pinnedPRs={pinnedPRs}
@@ -1116,6 +1168,8 @@ export function PRListPage({ onOpenSettings }: Props) {
           pr={selectedPR}
           ciStatus={ciStatuses?.get(selectedPR.id)}
           approvalStatus={approvalStatuses?.get(selectedPR.id)}
+          hasConflict={conflictStatuses?.has(selectedPR.id)}
+          roundTrips={roundTripCounts?.get(selectedPR.id)}
           onClose={() => setSelectedPR(null)}
         />
       )}

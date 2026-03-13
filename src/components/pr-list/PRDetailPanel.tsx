@@ -7,20 +7,87 @@ import { useSettingsStore } from '../../store/settings';
 import { fetchPRDetails } from '../../services/github';
 import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
+import type { IssueTrackerConfig as IssueTrackerConfigSettings } from '../../types/settings';
 import {
   X, ExternalLink, GitBranch, GitMerge, GitPullRequestDraft,
   XOctagon, CheckCircle2, XCircle, Clock, Minus, HelpCircle, User, Terminal,
+  ArrowLeftRight, AlertTriangle,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn } from '../../lib/utils';
 import { Spinner } from '../ui/Spinner';
 import { PRLifecycleTimeline } from './PRLifecycleTimeline';
+import { TitleWithIssueLinks } from './IssueLinks';
+
+// ─── Issue tracker link processing ───────────────────────────────────────────
+// Replaces tracker references in markdown text with proper links.
+// Skips content inside code fences and inline code.
+function processIssueLinks(
+  text: string,
+  trackers: IssueTrackerConfigSettings[],
+  repo: string
+): string {
+  if (trackers.length === 0) return text;
+
+  let inCodeBlock = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        return line;
+      }
+      if (inCodeBlock) return line;
+      // Mask inline code so we don't replace inside it
+      const codeSegments: string[] = [];
+      const masked = line.replace(/`[^`]*`/g, (m) => {
+        codeSegments.push(m);
+        return `\x00CODE${codeSegments.length - 1}\x00`;
+      });
+
+      let processed = masked;
+      for (const tracker of trackers) {
+        if (tracker.type === 'github') {
+          // Replace #N not already in a markdown link [...](...) or ](...)
+          processed = processed.replace(/(?<!\[)#(\d+)(?!\])/g, (_, n) => {
+            const url = `https://github.com/${repo}/issues/${n}`;
+            return `[#${n}](${url})`;
+          });
+        } else if (tracker.type === 'jira' && tracker.projectKey) {
+          const key = tracker.projectKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`(?<![\\[(])\\b(${key}-\\d+)\\b`, 'g');
+          processed = processed.replace(regex, (match) => {
+            // Validate the base URL before creating link
+            const base = tracker.baseUrl.replace(/\/$/, '');
+            if (!base.startsWith('http://') && !base.startsWith('https://')) return match;
+            return `[${match}](${base}/browse/${match})`;
+          });
+        } else if (tracker.type === 'custom' && tracker.pattern && tracker.urlTemplate) {
+          try {
+            const regex = new RegExp(tracker.pattern, 'g');
+            processed = processed.replace(regex, (match) => {
+              const url = tracker.urlTemplate!.replace('{{key}}', encodeURIComponent(match));
+              if (!url.startsWith('http://') && !url.startsWith('https://')) return match;
+              return `[${match}](${url})`;
+            });
+          } catch {
+            // ignore invalid regex
+          }
+        }
+      }
+      // Restore inline code
+      return processed.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeSegments[Number(i)]);
+    })
+    .join('\n');
+}
 
 interface Props {
   pr: PullRequest;
   ciStatus?: PullRequest['ciStatus'];
   approvalStatus?: ApprovalStatus;
+  hasConflict?: boolean;
   onClose: () => void;
+  roundTrips?: number;
 }
 
 const CI_INFO: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
@@ -50,8 +117,8 @@ function StatItem({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onClose }: Props) {
-  const { pat } = useSettingsStore();
+export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasConflict, onClose, roundTrips }: Props) {
+  const { pat, issueTrackers } = useSettingsStore();
   const [checkoutCopied, setCheckoutCopied] = useState(false);
 
   const checkoutCmd = `gh pr checkout ${pr.html_url}`;
@@ -77,7 +144,8 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
   const changedFiles = details?.changed_files ?? pr.changed_files;
   const commits = details?.commits ?? pr.commits;
   const comments = (details?.comments ?? pr.comments) + (details?.review_comments ?? pr.review_comments);
-  const body = details?.body ?? null;
+  const rawBody = details?.body ?? null;
+  const body = rawBody ? processIssueLinks(rawBody, issueTrackers, pr.repo) : rawBody;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -116,7 +184,7 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
           </button>
           <span className="text-xs font-mono text-slate-400 shrink-0">{repoName}#{pr.number}</span>
           <span className="flex-1 min-w-0 text-sm font-medium text-slate-700 dark:text-slate-300 truncate">
-            {pr.title}
+            <TitleWithIssueLinks text={pr.title} repo={pr.repo} />
           </span>
           <a
             href={pr.html_url}
@@ -199,6 +267,11 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
                   <XOctagon className="h-3.5 w-3.5" />Changes requested
                 </span>
               )}
+              {hasConflict && (
+                <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                  <AlertTriangle className="h-3.5 w-3.5" />Merge conflict
+                </span>
+              )}
             </div>
 
             {/* Labels */}
@@ -231,6 +304,17 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
               <StatItem label="Files" value={changedFiles} />
               <StatItem label="Commits" value={commits} />
               <StatItem label="Comments" value={comments} />
+              {roundTrips !== undefined && roundTrips > 0 && (
+                <StatItem
+                  label="Review rounds"
+                  value={
+                    <span className={cn('flex items-center gap-1', roundTrips >= 3 ? 'text-red-500' : 'text-slate-700 dark:text-slate-200')}>
+                      <ArrowLeftRight className="h-3.5 w-3.5" />
+                      {roundTrips}
+                    </span>
+                  }
+                />
+              )}
             </div>
 
             {/* Lifecycle Timeline */}

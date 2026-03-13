@@ -48,6 +48,7 @@ export interface PullRequest {
   base: { ref: string };
   head: { ref: string; sha: string };
   ciStatus: 'success' | 'failure' | 'pending' | 'neutral' | 'unknown';
+  body?: string | null;
 }
 
 export interface PRReview {
@@ -130,4 +131,19 @@ export interface HeatmapContributor {
   // day string "YYYY-MM-DD" → { reviews, merges }
   days: Record<string, { reviews: number; merges: number }>;
   totalActivity: number;
+}
+
+export interface BottleneckPhaseData {
+  phase: string;
+  avgHours: number;
+  count: number;
+}
+
+export interface SLAHeatmapRow {
+  login: string;
+  avatar_url: string;
+  openToFirstReview: number | null;
+  firstReviewToApproval: number | null;
+  approvalToMerge: number | null;
+  prCount: number;
 }

@@ -20,6 +20,30 @@ export interface FilterPreset {
   selectedReviewers: string[];
 }
 
+export interface SLAPolicy {
+  /** Max hours from PR open to first review */
+  firstReviewHours: number;
+  /** Max hours from first review to approval */
+  approvalHours: number;
+  /** Max hours from approval to merge */
+  mergeHours: number;
+}
+
+export interface IssueTrackerConfig {
+  id: string;
+  name: string;
+  /** github → auto-links #N; jira → links KEY-N; custom → user-defined regex */
+  type: 'github' | 'jira' | 'custom';
+  /** Base URL, e.g. https://company.atlassian.net */
+  baseUrl: string;
+  /** Jira only: project key prefix, e.g. "PRJ" */
+  projectKey?: string;
+  /** Custom only: regex pattern with one capture group */
+  pattern?: string;
+  /** Custom only: URL template using {{key}} placeholder */
+  urlTemplate?: string;
+}
+
 export interface Settings {
   pat: string;
   userLogin: string;
@@ -35,6 +59,8 @@ export interface Settings {
   filterPresets: FilterPreset[];
   pinnedPRs: string[]; // "owner/repo#number"
   sectionOrder: string[];
+  slaPolicy: SLAPolicy;
+  issueTrackers: IssueTrackerConfig[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -51,6 +77,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hideBotPRs: false,
   filterPresets: [],
   pinnedPRs: [],
-  sectionOrder: ['ready-to-merge', 'needs-attention', 'review-requested', 'my-prs', 'all-prs', 'drafts'],
+  sectionOrder: ['my-turn', 'ready-to-merge', 'needs-attention', 'review-requested', 'my-prs', 'all-prs', 'drafts'],
+  slaPolicy: { firstReviewHours: 4, approvalHours: 24, mergeHours: 48 },
+  issueTrackers: [],
 };
 

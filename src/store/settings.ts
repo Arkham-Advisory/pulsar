@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Settings, RepoFilterEntry, FilterPreset } from '../types/settings';
+import type { Settings, RepoFilterEntry, FilterPreset, SLAPolicy, IssueTrackerConfig } from '../types/settings';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { TimeRange } from '../types/github';
 
@@ -24,6 +24,10 @@ interface SettingsStore extends Settings {
   pinPR: (key: string) => void;
   unpinPR: (key: string) => void;
   setSectionOrder: (order: string[]) => void;
+  setSLAPolicy: (policy: SLAPolicy) => void;
+  addIssueTracker: (tracker: IssueTrackerConfig) => void;
+  removeIssueTracker: (id: string) => void;
+  updateIssueTracker: (id: string, update: Partial<IssueTrackerConfig>) => void;
   hasValidSettings: () => boolean;
 }
 
@@ -63,6 +67,15 @@ export const useSettingsStore = create<SettingsStore>()(
       unpinPR: (key) =>
         set((state) => ({ pinnedPRs: state.pinnedPRs.filter((k) => k !== key) })),
       setSectionOrder: (sectionOrder) => set({ sectionOrder }),
+      setSLAPolicy: (slaPolicy) => set({ slaPolicy }),
+      addIssueTracker: (tracker) =>
+        set((state) => ({ issueTrackers: [...state.issueTrackers, tracker] })),
+      removeIssueTracker: (id) =>
+        set((state) => ({ issueTrackers: state.issueTrackers.filter((t) => t.id !== id) })),
+      updateIssueTracker: (id, update) =>
+        set((state) => ({
+          issueTrackers: state.issueTrackers.map((t) => (t.id === id ? { ...t, ...update } : t)),
+        })),
       hasValidSettings: () => {
         const { pat, repoFilters } = get();
         return pat.trim().length > 0 && repoFilters.length > 0;
@@ -70,6 +83,15 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'pr-dashboard-settings',
+      // Ensure new fields added to DEFAULT_SETTINGS are always present after rehydration
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as object),
+        // Re-apply defaults for any fields missing from the persisted snapshot
+        slaPolicy: (persisted as Partial<Settings>).slaPolicy ?? DEFAULT_SETTINGS.slaPolicy,
+        issueTrackers: (persisted as Partial<Settings>).issueTrackers ?? DEFAULT_SETTINGS.issueTrackers,
+        sectionOrder: (persisted as Partial<Settings>).sectionOrder ?? DEFAULT_SETTINGS.sectionOrder,
+      }),
       // Isolate PAT in localStorage under a specific key
       partialize: (state) => ({
         pat: state.pat,
@@ -86,6 +108,8 @@ export const useSettingsStore = create<SettingsStore>()(
         filterPresets: state.filterPresets,
         pinnedPRs: state.pinnedPRs,
         sectionOrder: state.sectionOrder,
+        slaPolicy: state.slaPolicy,
+        issueTrackers: state.issueTrackers,
       }),
     }
   )
