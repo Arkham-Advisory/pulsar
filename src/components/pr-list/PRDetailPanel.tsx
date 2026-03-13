@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -9,11 +9,12 @@ import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
 import {
   X, ExternalLink, GitBranch, GitMerge, GitPullRequestDraft,
-  XOctagon, CheckCircle2, XCircle, Clock, Minus, HelpCircle, User,
+  XOctagon, CheckCircle2, XCircle, Clock, Minus, HelpCircle, User, Terminal,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn } from '../../lib/utils';
 import { Spinner } from '../ui/Spinner';
+import { PRLifecycleTimeline } from './PRLifecycleTimeline';
 
 interface Props {
   pr: PullRequest;
@@ -51,6 +52,16 @@ function StatItem({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onClose }: Props) {
   const { pat } = useSettingsStore();
+  const [checkoutCopied, setCheckoutCopied] = useState(false);
+
+  const checkoutCmd = `gh pr checkout ${pr.html_url}`;
+
+  const handleCopyCheckout = () => {
+    navigator.clipboard.writeText(checkoutCmd).then(() => {
+      setCheckoutCopied(true);
+      setTimeout(() => setCheckoutCopied(false), 2000);
+    });
+  };
 
   const { data: details, isLoading: detailsLoading } = useQuery({
     queryKey: ['pr-details', pr.repo, pr.number],
@@ -88,7 +99,7 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
 
       {/* Panel */}
       <div
-        className="fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden"
+        className="fixed inset-y-0 right-0 z-50 w-full sm:w-[600px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label={`PR #${pr.number}: ${pr.title}`}
@@ -116,6 +127,23 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
           >
             <ExternalLink className="h-4 w-4" />
           </a>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyCheckout}
+              className="btn-ghost p-1.5"
+              title={checkoutCopied ? 'Copied!' : `Copy: ${checkoutCmd}`}
+            >
+              {checkoutCopied
+                ? <CheckCircle2 className="h-4 w-4 text-green-500" />
+                : <Terminal className="h-4 w-4" />}
+            </button>
+            {checkoutCopied && (
+              <div className="absolute top-full mt-1 right-0 z-50 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg pointer-events-none">
+                Copied to clipboard!
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Scrollable content */}
@@ -204,6 +232,19 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, onCl
               <StatItem label="Commits" value={commits} />
               <StatItem label="Comments" value={comments} />
             </div>
+
+            {/* Lifecycle Timeline */}
+            {!detailsLoading && (
+              <PRLifecycleTimeline
+                openedAt={pr.created_at}
+                firstCommitAt={details?.firstCommitAt ?? null}
+                firstReviewAt={details?.firstReviewAt ?? null}
+                firstReviewUser={details?.firstReviewUser ?? null}
+                approvedAt={details?.approvedAt ?? null}
+                approvedBy={details?.approvedBy ?? null}
+                mergedAt={pr.merged_at}
+              />
+            )}
 
             {/* Requested reviewers */}
             {pr.requested_reviewers.length > 0 && (

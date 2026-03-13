@@ -123,3 +123,11 @@ export interface WeeklyDigest {
   draftCount: number;
   avgTimeToFirstReviewHours: number | null;
 }
+
+export interface HeatmapContributor {
+  login: string;
+  avatar_url: string;
+  // day string "YYYY-MM-DD" → { reviews, merges }
+  days: Record<string, { reviews: number; merges: number }>;
+  totalActivity: number;
+}

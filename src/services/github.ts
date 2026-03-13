@@ -27,6 +27,31 @@ export async function validatePAT(pat: string): Promise<{ valid: boolean; login?
   }
 }
 
+// Check whether the current PAT can access a repo filter entry.
+// Returns false on 403 (no permission) or 404 (not found).
+export async function checkRepoFilterAccess(
+  pat: string,
+  entry: RepoFilterEntry,
+): Promise<boolean> {
+  const octokit = getOctokit(pat);
+  try {
+    if (entry.type === 'repo') {
+      await octokit.repos.get({ owner: entry.owner, repo: entry.repo });
+    } else {
+      // org or prefix — verify the owner is reachable
+      try {
+        await octokit.orgs.get({ org: entry.owner });
+      } catch {
+        // might be a personal account rather than an org
+        await octokit.users.getByUsername({ username: entry.owner });
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Return the total repo count for an org or user (public + private).
 // Uses the metadata endpoint — no pagination needed.
 export async function fetchOwnerRepoCount(pat: string, owner: string): Promise<number> {
@@ -593,13 +618,62 @@ export interface PRDetails {
   commits: number;
   comments: number;
   review_comments: number;
+  // Timeline milestones (null = not available / not fetched)
+  firstCommitAt: string | null;
+  firstReviewAt: string | null;
+  firstReviewUser: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
 }
 
 export async function fetchPRDetails(pat: string, repo: string, prNumber: number): Promise<PRDetails> {
   const [owner, repoName] = repo.split('/');
   const octokit = getOctokit(pat);
   try {
-    const { data } = await octokit.pulls.get({ owner, repo: repoName, pull_number: prNumber });
+    const [prRes, commitsRes, reviewsRes] = await Promise.all([
+      octokit.pulls.get({ owner, repo: repoName, pull_number: prNumber }),
+      octokit.pulls.listCommits({ owner, repo: repoName, pull_number: prNumber, per_page: 100 }).catch(() => null),
+      octokit.pulls.listReviews({ owner, repo: repoName, pull_number: prNumber, per_page: 100 }).catch(() => null),
+    ]);
+    const data = prRes.data;
+
+    // First commit by authored date
+    let firstCommitAt: string | null = null;
+    if (commitsRes && commitsRes.data.length > 0) {
+      const dates = commitsRes.data
+        .map((c) => c.commit.author?.date ?? c.commit.committer?.date ?? null)
+        .filter((d): d is string => !!d)
+        .sort();
+      firstCommitAt = dates[0] ?? null;
+    }
+
+    // First review and first approval from reviews list
+    let firstReviewAt: string | null = null;
+    let firstReviewUser: string | null = null;
+    let approvedAt: string | null = null;
+    let approvedBy: string | null = null;
+    if (reviewsRes) {
+      const submitted = reviewsRes.data
+        .filter((r) => r.submitted_at && r.state !== 'PENDING')
+        .sort((a, b) => new Date(a.submitted_at!).getTime() - new Date(b.submitted_at!).getTime());
+      if (submitted.length > 0) {
+        firstReviewAt = submitted[0].submitted_at ?? null;
+        firstReviewUser = submitted[0].user?.login ?? null;
+      }
+      // Latest APPROVED per reviewer (GitHub counts last review per reviewer)
+      const latest = new Map<string, typeof submitted[number]>();
+      for (const r of submitted) {
+        if (r.user?.login && r.state !== 'COMMENTED') latest.set(r.user.login, r);
+      }
+      const approvals = Array.from(latest.values())
+        .filter((r) => r.state === 'APPROVED')
+        .sort((a, b) => new Date(a.submitted_at!).getTime() - new Date(b.submitted_at!).getTime());
+      if (approvals.length > 0) {
+        approvedAt = approvals[0].submitted_at ?? null;
+        approvedBy = approvals[0].user?.login ?? null;
+      }
+    }
+
     return {
       body: data.body ?? null,
       additions: data.additions,
@@ -608,8 +682,18 @@ export async function fetchPRDetails(pat: string, repo: string, prNumber: number
       commits: data.commits,
       comments: data.comments,
       review_comments: data.review_comments,
+      firstCommitAt,
+      firstReviewAt,
+      firstReviewUser,
+      approvedAt,
+      approvedBy,
     };
   } catch {
-    return { body: null, additions: 0, deletions: 0, changed_files: 0, commits: 0, comments: 0, review_comments: 0 };
+    return {
+      body: null, additions: 0, deletions: 0, changed_files: 0,
+      commits: 0, comments: 0, review_comments: 0,
+      firstCommitAt: null, firstReviewAt: null, firstReviewUser: null,
+      approvedAt: null, approvedBy: null,
+    };
   }
 }

@@ -8,6 +8,7 @@ import type {
   ReviewerStats,
   PRSizeCategory,
   WeeklyDigest,
+  HeatmapContributor,
 } from '../types/github';
 import {
   format,
@@ -417,4 +418,54 @@ export function buildWeeklyDigest(
     draftCount: draftPRs.length,
     avgTimeToFirstReviewHours,
   };
+}
+
+// Build per-contributor activity heatmap data.
+// Returns top-N contributors (by total activity) with per-day review/merge counts.
+export function buildContributorHeatmap(
+  prs: PullRequest[],
+  reviews: PRReview[],
+  since: Date,
+  now: Date = new Date()
+): HeatmapContributor[] {
+  const contributors = new Map<string, HeatmapContributor>();
+
+  function ensure(login: string, avatar: string) {
+    if (!contributors.has(login)) {
+      contributors.set(login, { login, avatar_url: avatar, days: {}, totalActivity: 0 });
+    }
+    return contributors.get(login)!;
+  }
+
+  function dayKey(date: Date): string {
+    return format(date, 'yyyy-MM-dd');
+  }
+
+  // Reviews
+  for (const review of reviews) {
+    const d = new Date(review.submitted_at);
+    if (d < since || d > now) continue;
+    const c = ensure(review.user.login, review.user.avatar_url);
+    const key = dayKey(d);
+    if (!c.days[key]) c.days[key] = { reviews: 0, merges: 0 };
+    c.days[key].reviews++;
+    c.totalActivity++;
+  }
+
+  // Merges (attributed to PR author)
+  for (const pr of prs) {
+    if (!pr.merged || !pr.merged_at) continue;
+    const d = new Date(pr.merged_at);
+    if (d < since || d > now) continue;
+    const c = ensure(pr.user.login, pr.user.avatar_url);
+    const key = dayKey(d);
+    if (!c.days[key]) c.days[key] = { reviews: 0, merges: 0 };
+    c.days[key].merges++;
+    c.totalActivity++;
+  }
+
+  return Array.from(contributors.values())
+    .filter((c) => c.totalActivity > 0)
+    .sort((a, b) => b.totalActivity - a.totalActivity)
+    .slice(0, 12);
 }

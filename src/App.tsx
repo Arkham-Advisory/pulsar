@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useSettingsStore } from './store/settings'
 import { capture } from './lib/analytics'
@@ -12,6 +12,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { APILimitsPage } from './pages/APILimitsPage'
 import { EmptyState } from './components/dashboard/EmptyState'
 import { SettingsPanel } from './components/settings/SettingsPanel'
+import { SharedLinkPreviewModal, type SharedLinkPayload } from './components/pr-list/SharedLinkPreviewModal'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +24,37 @@ const queryClient = new QueryClient({
 })
 
 function AppContent() {
-  const { darkMode, hasValidSettings, refreshIntervalMinutes, pat, userLogin, setUserLogin } = useSettingsStore()
+  const {
+    darkMode, hasValidSettings, refreshIntervalMinutes, pat, userLogin, setUserLogin,
+    setRepoFilters, addRepoFilter, setSelectedRepos, setHideBotPRs, setSectionOrder,
+  } = useSettingsStore()
+
+  // Parse the share link payload once on mount.
+  // When there is no PAT yet, we show the combined PAT+preview modal from here
+  // instead of pushing the user into Settings.
+  const [noPATSharePayload] = useState<SharedLinkPayload | null>(() => {
+    if (pat) return null; // Already authenticated — PRListPage handles the modal
+    try {
+      const hash = window.location.hash;
+      if (!hash.startsWith('#filter=')) return null;
+      const raw = JSON.parse(atob(hash.slice(8)));
+      if (raw.share === true) return raw as SharedLinkPayload;
+    } catch { /* ignore */ }
+    return null;
+  });
+  // Whether the no-PAT modal has been dismissed (so it doesn't re-appear after Cancel)
+  const [noPATModalDismissed, setNoPATModalDismissed] = useState(false);
+
+  // Detect share link once on mount — allows PRListPage to mount (and show the review
+  // modal) even before the user has configured repo filters, as long as they have a PAT.
+  const hasShareLink = useMemo(() => {
+    try {
+      const hash = window.location.hash;
+      if (!hash.startsWith('#filter=')) return false;
+      return JSON.parse(atob(hash.slice(8))).share === true;
+    } catch { return false; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [showSettings, setShowSettings] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [page, setPage] = useState<AppPage>('prs')
@@ -98,9 +129,9 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Open settings on first visit
+  // Open settings on first visit — but skip if we're showing the no-PAT share modal
   useEffect(() => {
-    if (!hasValidSettings()) setShowSettings(true)
+    if (!hasValidSettings() && !hasShareLink) setShowSettings(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -116,7 +147,35 @@ function AppContent() {
     }
   }, [page, qc])
 
+  // Apply the no-PAT share link: save repo settings to store and clear the hash.
+  // The PAT itself is saved inside SharedLinkPreviewModal before this callback fires.
+  const handleNoPATShareApply = useCallback((payload: SharedLinkPayload, replaceRepoFilters: boolean) => {
+    if (Array.isArray(payload.repoFilters) && payload.repoFilters.length > 0) {
+      if (replaceRepoFilters) {
+        setRepoFilters(payload.repoFilters);
+      } else {
+        payload.repoFilters.forEach((f) => addRepoFilter(f));
+      }
+    }
+    if (Array.isArray(payload.sectionOrder)) setSectionOrder(payload.sectionOrder);
+    if (typeof payload.hideBotPRs === 'boolean') setHideBotPRs(payload.hideBotPRs);
+    if (Array.isArray(payload.selectedRepos)) setSelectedRepos(payload.selectedRepos);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    setNoPATModalDismissed(true);
+  }, [setRepoFilters, addRepoFilter, setSectionOrder, setHideBotPRs, setSelectedRepos])
+
+  const handleNoPATShareDismiss = useCallback(() => {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    setNoPATModalDismissed(true);
+  }, [])
+
   const validSettings = hasValidSettings()
+  // Allow mounting PRListPage with just a PAT when a share link is in the URL,
+  // so the share preview modal can appear and supply the missing repo configuration.
+  const canMountPRList = validSettings || (!!pat && hasShareLink)
+
+  // Show the no-PAT combined modal when: share link present, no PAT, not yet dismissed
+  const showNoPATModal = !!noPATSharePayload && !pat && !noPATModalDismissed
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
@@ -134,14 +193,24 @@ function AppContent() {
         progress={progress}
       />
 
-      {!validSettings ? (
+      {!canMountPRList ? (
         <EmptyState onOpenSettings={() => setShowSettings(true)} />
       ) : page === 'prs' ? (
-        <PRListPage />
+        <PRListPage onOpenSettings={() => setShowSettings(true)} />
       ) : page === 'dashboard' ? (
         <DashboardPage />
       ) : (
         <APILimitsPage />
+      )}
+
+      {showNoPATModal && (
+        <SharedLinkPreviewModal
+          payload={noPATSharePayload!}
+          currentRepoFilters={[]}
+          onApply={handleNoPATShareApply}
+          onDismiss={handleNoPATShareDismiss}
+          requiresPAT
+        />
       )}
 
       {showSettings && (

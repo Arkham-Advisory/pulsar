@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { PullRequest, PRReview } from '../../types/github';
 import { useSettingsStore } from '../../store/settings';
-import { getSinceDate, computeMetrics, buildWeeklyData, buildCycleTimeData, buildAuthorStats, buildReviewerStats, buildSizeDistribution, buildWeeklyDigest, formatDuration } from '../../lib/metrics';
+import { getSinceDate, computeMetrics, buildWeeklyData, buildCycleTimeData, buildAuthorStats, buildReviewerStats, buildSizeDistribution, buildWeeklyDigest, formatDuration, buildContributorHeatmap } from '../../lib/metrics';
 import { MetricCard } from './MetricCard';
 import { StalePRsCard } from './StalePRsCard';
 import { WaitingReviewCard } from './WaitingReviewCard';
@@ -11,6 +11,7 @@ import { CycleTimeChart } from '../charts/CycleTimeChart';
 import { ReviewWorkloadChart } from '../charts/ReviewWorkloadChart';
 import { PRSizeChart } from '../charts/PRSizeChart';
 import { AuthorActivityTable } from '../charts/AuthorActivityTable';
+import { ContributorHeatmap } from '../charts/ContributorHeatmap';
 import { WeeklyDigestCard } from './WeeklyDigestCard';
 import {
   GitPullRequest,
@@ -45,6 +46,10 @@ export function Dashboard({ prs, reviews, loading }: Props) {
   const weeklyDigest = useMemo(
     () => (prs.length > 0 ? buildWeeklyDigest(prs, reviews) : null),
     [prs, reviews]
+  );
+  const contributorHeatmap = useMemo(
+    () => buildContributorHeatmap(prs, reviews, since),
+    [prs, reviews, since]
   );
 
   return (
@@ -128,6 +133,11 @@ export function Dashboard({ prs, reviews, loading }: Props) {
         {/* Author Activity Table */}
         <div className="grid grid-cols-1 gap-4">
           <AuthorActivityTable data={authorStats} loading={loading} />
+        </div>
+
+        {/* Contributor Heatmap */}
+        <div className="grid grid-cols-1 gap-4">
+          <ContributorHeatmap data={contributorHeatmap} since={since} loading={loading} />
         </div>
 
         {/* Footer */}

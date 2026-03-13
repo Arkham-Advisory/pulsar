@@ -1,6 +1,7 @@
 import { cn } from '../../lib/utils';
 import { capture } from '../../lib/analytics';
 import { getPRSizeLabel } from '../../lib/metrics';
+import { useState } from 'react';
 import type { PullRequest } from '../../types/github';
 import type { ApprovalStatus } from '../../services/github';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -15,6 +16,8 @@ import {
   GitMerge,
   XOctagon,
   GitFork,
+  Pin,
+  Terminal,
 } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -28,6 +31,8 @@ interface Props {
   onSelect?: () => void;
   hasConflict?: boolean;
   sizeTotal?: number; // additions + deletions; undefined = not yet loaded
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 const CI_ICON = {
@@ -55,9 +60,19 @@ const SIZE_STYLES: Record<string, string> = {
   Huge:   'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
 };
 
-export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect, hasConflict, sizeTotal }: Props) {
+export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = true, highlight = false, section, onSelect, hasConflict, sizeTotal, isPinned, onTogglePin }: Props) {
   const age = formatDistanceToNowStrict(new Date(pr.updated_at), { addSuffix: false });
   const isOld = (Date.now() - new Date(pr.updated_at).getTime()) > 1000 * 60 * 60 * 24 * 7;
+
+  const [checkoutCopied, setCheckoutCopied] = useState(false);
+  const checkoutCmd = `gh pr checkout ${pr.html_url}`;
+  const handleCopyCheckout = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(checkoutCmd).then(() => {
+      setCheckoutCopied(true);
+      setTimeout(() => setCheckoutCopied(false), 2000);
+    });
+  };
 
   const labels = pr.labels.slice(0, 3);
   const extraLabels = pr.labels.length - 3;
@@ -271,6 +286,42 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
         <span className={cn('text-xs transition-colors duration-700', isOld ? 'text-amber-500' : 'text-slate-500 dark:text-slate-400')}>
           {age}
         </span>
+      </div>
+
+      {/* Action column (checkout + pin) — fixed width so it never shifts adjacent columns */}
+      <div className="w-14 shrink-0 flex items-center justify-end gap-0.5">
+        <button
+          type="button"
+          onClick={handleCopyCheckout}
+          title={checkoutCopied ? 'Copied!' : 'Copy checkout command'}
+          aria-label={checkoutCopied ? 'Copied!' : 'Copy checkout command'}
+          className={cn(
+            'p-1 rounded transition-all',
+            checkoutCopied
+              ? 'text-green-500'
+              : 'text-slate-400 dark:text-slate-500 hover:text-brand-500',
+          )}
+        >
+          {checkoutCopied
+            ? <CheckCircle2 className="h-3.5 w-3.5" />
+            : <Terminal className="h-3.5 w-3.5" />}
+        </button>
+        {onTogglePin && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+            title={isPinned ? 'Unpin PR' : 'Pin PR'}
+            aria-label={isPinned ? 'Unpin' : 'Pin'}
+            className={cn(
+              'p-1 rounded transition-all',
+              isPinned
+                ? 'text-brand-500 dark:text-brand-400'
+                : 'text-slate-400 dark:text-slate-500 hover:text-brand-500'
+            )}
+          >
+            <Pin className={cn('h-3.5 w-3.5', isPinned && 'fill-current')} />
+          </button>
+        )}
       </div>
     </div>
   );

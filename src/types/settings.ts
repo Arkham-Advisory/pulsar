@@ -17,6 +17,7 @@ export interface FilterPreset {
   stateFilter: 'open' | 'merged';
   selectedRepos: string[];
   hideBotPRs: boolean;
+  selectedReviewers: string[];
 }
 
 export interface Settings {
@@ -32,6 +33,8 @@ export interface Settings {
   analyticsConsent: boolean | null; // null = undecided (show prompt)
   hideBotPRs: boolean;
   filterPresets: FilterPreset[];
+  pinnedPRs: string[]; // "owner/repo#number"
+  sectionOrder: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -47,5 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   analyticsConsent: null,
   hideBotPRs: false,
   filterPresets: [],
+  pinnedPRs: [],
+  sectionOrder: ['ready-to-merge', 'needs-attention', 'review-requested', 'my-prs', 'all-prs', 'drafts'],
 };
 

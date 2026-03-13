@@ -21,6 +21,9 @@ interface SettingsStore extends Settings {
   setHideBotPRs: (hide: boolean) => void;
   addFilterPreset: (preset: FilterPreset) => void;
   removeFilterPreset: (id: string) => void;
+  pinPR: (key: string) => void;
+  unpinPR: (key: string) => void;
+  setSectionOrder: (order: string[]) => void;
   hasValidSettings: () => boolean;
 }
 
@@ -53,6 +56,13 @@ export const useSettingsStore = create<SettingsStore>()(
         set((state) => ({ filterPresets: [...state.filterPresets, preset] })),
       removeFilterPreset: (id) =>
         set((state) => ({ filterPresets: state.filterPresets.filter((p) => p.id !== id) })),
+      pinPR: (key) =>
+        set((state) => ({
+          pinnedPRs: state.pinnedPRs.includes(key) ? state.pinnedPRs : [...state.pinnedPRs, key],
+        })),
+      unpinPR: (key) =>
+        set((state) => ({ pinnedPRs: state.pinnedPRs.filter((k) => k !== key) })),
+      setSectionOrder: (sectionOrder) => set({ sectionOrder }),
       hasValidSettings: () => {
         const { pat, repoFilters } = get();
         return pat.trim().length > 0 && repoFilters.length > 0;
@@ -74,6 +84,8 @@ export const useSettingsStore = create<SettingsStore>()(
         analyticsConsent: state.analyticsConsent,
         hideBotPRs: state.hideBotPRs,
         filterPresets: state.filterPresets,
+        pinnedPRs: state.pinnedPRs,
+        sectionOrder: state.sectionOrder,
       }),
     }
   )
