@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   await mockGitHub(page);
   await page.goto('/');
   // Wait for the PR list to be rendered
-  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' }).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('pin button is visible on row hover', async ({ page }) => {
@@ -64,7 +64,7 @@ test('pin state persists after page reload', async ({ page }) => {
   // Reload
   await page.reload();
   await page.waitForLoadState('networkidle');
-  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' }).first()).toBeVisible({ timeout: 15_000 });
 
   // Pinned section should still be present
   await expect(page.getByText('Pinned').first()).toBeVisible();

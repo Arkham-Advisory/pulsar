@@ -81,7 +81,10 @@ export async function seedSettings(page: Page, options: SeedOptions = {}) {
   };
 
   await page.addInitScript((s) => {
-    localStorage.setItem('pr-dashboard-settings', JSON.stringify(s));
+    // Only seed if there's no existing state — preserves changes made during the test (e.g. pinning) across page.reload()
+    if (!localStorage.getItem('pr-dashboard-settings')) {
+      localStorage.setItem('pr-dashboard-settings', JSON.stringify(s));
+    }
   }, settings);
 }
 

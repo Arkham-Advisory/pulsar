@@ -18,7 +18,7 @@ test('renders the app header with navigation tabs', async ({ page }) => {
 
 test('shows PR list content area', async ({ page }) => {
   // The .flex-1 content area should be visible — wait for loading spinner to disappear
-  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' }).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('navigates to dashboard page', async ({ page }) => {

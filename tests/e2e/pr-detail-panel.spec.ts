@@ -15,15 +15,16 @@ test.beforeEach(async ({ page }) => {
   await seedSettings(page);
   await mockGitHub(page);
   await page.goto('/');
-  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' }).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('clicking a PR row opens the detail panel', async ({ page }) => {
   const prRow = page.locator('[role="button"]').filter({ hasText: 'feat: add contributor heatmap' }).first();
   await prRow.click();
-  // Side panel should appear with the PR number in the header
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByText('#42')).toBeVisible();
+  // Side panel should appear with the PR number in the header (renders as "frontend#42")
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/frontend#42/)).toBeVisible();
 });
 
 test('detail panel shows PR title', async ({ page }) => {
