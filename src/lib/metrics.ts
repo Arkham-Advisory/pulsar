@@ -12,7 +12,6 @@ import type {
   BottleneckPhaseData,
   SLAHeatmapRow,
 } from '../types/github';
-import type { SLAPolicy } from '../types/settings';
 import {
   format,
   differenceInHours,
