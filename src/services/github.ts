@@ -379,12 +379,27 @@ export async function fetchBasicPRData(
   const octokit = getOctokit(pat);
   const repoList = await buildRepoList(octokit, repoFilters, onProgress);
   const allPRs: PullRequest[] = [];
-  for (const { owner, repo } of repoList) {
-    if (signal?.aborted) break;
-    onProgress?.(`Fetching PRs for ${owner}/${repo}...`);
-    const prs = await fetchPRsForRepo(octokit, owner, repo, since, signal);
-    allPRs.push(...prs);
+  const total = repoList.length;
+  if (total === 0) return allPRs;
+
+  onProgress?.(`Fetching PRs from ${total} repo${total !== 1 ? 's' : ''}...`);
+
+  const CONCURRENCY = 6;
+  let index = 0;
+  let completed = 0;
+
+  async function worker() {
+    while (index < repoList.length) {
+      if (signal?.aborted) break;
+      const { owner, repo } = repoList[index++];
+      const prs = await fetchPRsForRepo(octokit, owner, repo, since, signal);
+      allPRs.push(...prs);
+      completed++;
+      onProgress?.(`Fetching PRs… ${completed}/${total} repos`);
+    }
   }
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
   return allPRs;
 }
 
@@ -589,11 +604,23 @@ export async function fetchAllData(
   const allReviews: PRReview[] = [];
 
   const repoList = await buildRepoList(octokit, repoFilters, onProgress);
-  for (const { owner, repo } of repoList) {
-    if (signal?.aborted) break;
-    onProgress?.(`Fetching PRs for ${owner}/${repo}...`);
-    const prs = await fetchPRsForRepo(octokit, owner, repo, since, signal);
-    allPRs.push(...prs);
+  const total = repoList.length;
+  if (total > 0) {
+    onProgress?.(`Fetching PRs from ${total} repo${total !== 1 ? 's' : ''}...`);
+    const CONCURRENCY = 6;
+    let repoIndex = 0;
+    let reposDone = 0;
+    async function repoWorker() {
+      while (repoIndex < repoList.length) {
+        if (signal?.aborted) break;
+        const { owner, repo } = repoList[repoIndex++];
+        const prs = await fetchPRsForRepo(octokit, owner, repo, since, signal);
+        allPRs.push(...prs);
+        reposDone++;
+        onProgress?.(`Fetching PRs… ${reposDone}/${total} repos`);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, repoWorker));
   }
 
   // Enrich PRs with size data (additions/deletions not in list response)
@@ -602,18 +629,28 @@ export async function fetchAllData(
     await enrichPRsWithSizeData(octokit, allPRs, signal, onProgress);
   }
 
-  // Fetch reviews for a subset (to avoid rate limiting, fetch reviews for recently updated PRs)
-  const prsForReviews = allPRs.slice(0, 500); // limit to avoid rate limit
-  let reviewsFetched = 0;
-  for (const pr of prsForReviews) {
-    if (signal?.aborted) break;
-    const [owner, repo] = pr.repo.split('/');
-    const reviews = await fetchPRReviews(octokit, owner, repo, pr.number);
-    allReviews.push(...reviews);
-    reviewsFetched++;
-    if (reviewsFetched % 20 === 0) {
-      onProgress?.(`Fetched reviews for ${reviewsFetched}/${prsForReviews.length} PRs...`);
+  // Fetch reviews for a subset in parallel (to avoid rate limiting)
+  const prsForReviews = allPRs.slice(0, 500);
+  const totalReviews = prsForReviews.length;
+  if (totalReviews > 0) {
+    onProgress?.(`Fetching reviews for ${totalReviews} PRs...`);
+    const REVIEW_CONCURRENCY = 8;
+    let reviewIndex = 0;
+    let reviewsDone = 0;
+    async function reviewWorker() {
+      while (reviewIndex < prsForReviews.length) {
+        if (signal?.aborted) break;
+        const pr = prsForReviews[reviewIndex++];
+        const [owner, repo] = pr.repo.split('/');
+        const reviews = await fetchPRReviews(octokit, owner, repo, pr.number);
+        allReviews.push(...reviews);
+        reviewsDone++;
+        if (reviewsDone % 20 === 0 || reviewsDone === totalReviews) {
+          onProgress?.(`Fetching reviews… ${reviewsDone}/${totalReviews} PRs`);
+        }
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(REVIEW_CONCURRENCY, totalReviews) }, reviewWorker));
   }
 
   return { prs: allPRs, reviews: allReviews };
