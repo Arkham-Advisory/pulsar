@@ -2,6 +2,7 @@ import { useRateLimit } from '../hooks/useRateLimit';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../store/settings';
 import { Spinner } from '../components/ui/Spinner';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { cn } from '../lib/utils';
 import { formatDistanceToNow, format } from 'date-fns';
 import { RefreshCw, Key, Shield, AlertTriangle } from 'lucide-react';
@@ -71,6 +72,7 @@ export function APILimitsPage() {
   const qc = useQueryClient();
 
   return (
+    <ErrorBoundary>
     <div className="flex-1 overflow-y-auto">
       <div className="p-6 max-w-4xl mx-auto space-y-6">
 
@@ -112,9 +114,17 @@ export function APILimitsPage() {
 
         {/* Error */}
         {error && !isLoading && (
-          <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl px-4 py-3">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            Failed to load rate limit data. Check your PAT has the correct scopes.
+          <div className="flex items-center justify-between gap-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Failed to load rate limit data. Check your PAT has the correct scopes.
+            </div>
+            <button
+              onClick={() => qc.invalidateQueries({ queryKey: ['rate-limit'] })}
+              className="text-xs underline underline-offset-2 hover:no-underline shrink-0"
+            >
+              Retry
+            </button>
           </div>
         )}
 
@@ -186,5 +196,6 @@ export function APILimitsPage() {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

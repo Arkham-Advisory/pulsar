@@ -13,6 +13,8 @@ import {
   type SharedLinkPayload,
 } from '../components/pr-list/SharedLinkPreviewModal';
 import { Spinner } from '../components/ui/Spinner';
+import { QueryError } from '../components/ui/QueryError';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { checkRepoFilterAccess, type ApprovalStatus } from '../services/github';
 import { differenceInHours } from 'date-fns';
 import {
@@ -200,7 +202,7 @@ export function PRListPage({ onOpenSettings }: Props) {
     setSectionOrderLocal(normalized);
     storeSetSectionOrder(normalized);
   }, [storeSetSectionOrder]);
-  const { data: prs = [], isLoading, isFetching, progress } = usePRListData();
+  const { data: prs = [], isLoading, isError, isFetching, progress } = usePRListData();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -715,6 +717,7 @@ export function PRListPage({ onOpenSettings }: Props) {
   }, [saveNameInput, search, stateFilter, selectedRepos, hideBotPRs, selectedReviewers, addFilterPreset]);
 
   return (
+    <ErrorBoundary>
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Toolbar */}
       <div className="shrink-0 flex items-center gap-2 px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-wrap">
@@ -1081,6 +1084,22 @@ export function PRListPage({ onOpenSettings }: Props) {
         />
       )}
 
+      {/* Background refresh error banner */}
+      {isError && prs.length > 0 && (
+        <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-2 bg-red-50 dark:bg-red-950/20 border-b border-red-100 dark:border-red-900/30 text-xs text-red-600 dark:text-red-400">
+          <span>Failed to refresh — showing cached data.</span>
+          <button
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['pr-list'] });
+              queryClient.invalidateQueries({ queryKey: ['ci-statuses'] });
+            }}
+            className="underline underline-offset-2 hover:no-underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
@@ -1088,6 +1107,14 @@ export function PRListPage({ onOpenSettings }: Props) {
             <Spinner size="lg" />
             {progress && <p className="text-sm text-slate-400">{progress}</p>}
           </div>
+        ) : isError && prs.length === 0 ? (
+          <QueryError
+            message="Could not load pull requests. Check your network connection or PAT permissions."
+            onRetry={() => {
+              queryClient.invalidateQueries({ queryKey: ['pr-list'] });
+              queryClient.invalidateQueries({ queryKey: ['ci-statuses'] });
+            }}
+          />
         ) : prs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400">
             <GitPullRequest className="h-10 w-10 mb-3 opacity-30" />
@@ -1174,5 +1201,6 @@ export function PRListPage({ onOpenSettings }: Props) {
         />
       )}
     </div>
+    </ErrorBoundary>
   );
 }
