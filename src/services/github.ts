@@ -634,9 +634,11 @@ export interface PRDetails {
   firstReviewUser: string | null;
   approvedAt: string | null;
   approvedBy: string | null;
+  // The commit SHA at which the current user last reviewed (non-comment), if any
+  myLastReviewCommitId: string | null;
 }
 
-export async function fetchPRDetails(pat: string, repo: string, prNumber: number): Promise<PRDetails> {
+export async function fetchPRDetails(pat: string, repo: string, prNumber: number, userLogin?: string): Promise<PRDetails> {
   const [owner, repoName] = repo.split('/');
   const octokit = getOctokit(pat);
   try {
@@ -662,6 +664,7 @@ export async function fetchPRDetails(pat: string, repo: string, prNumber: number
     let firstReviewUser: string | null = null;
     let approvedAt: string | null = null;
     let approvedBy: string | null = null;
+    let myLastReviewCommitId: string | null = null;
     if (reviewsRes) {
       const submitted = reviewsRes.data
         .filter((r) => r.submitted_at && r.state !== 'PENDING')
@@ -682,6 +685,15 @@ export async function fetchPRDetails(pat: string, repo: string, prNumber: number
         approvedAt = approvals[0].submitted_at ?? null;
         approvedBy = approvals[0].user?.login ?? null;
       }
+      // Find the commit SHA of the current user's most recent non-comment review
+      if (userLogin) {
+        const myReviews = reviewsRes.data
+          .filter((r) => r.user?.login === userLogin && r.state !== 'PENDING' && r.state !== 'COMMENTED' && r.commit_id)
+          .sort((a, b) => new Date(b.submitted_at!).getTime() - new Date(a.submitted_at!).getTime());
+        if (myReviews.length > 0) {
+          myLastReviewCommitId = myReviews[0].commit_id ?? null;
+        }
+      }
     }
 
     return {
@@ -697,13 +709,14 @@ export async function fetchPRDetails(pat: string, repo: string, prNumber: number
       firstReviewUser,
       approvedAt,
       approvedBy,
+      myLastReviewCommitId,
     };
   } catch {
     return {
       body: null, additions: 0, deletions: 0, changed_files: 0,
       commits: 0, comments: 0, review_comments: 0,
       firstCommitAt: null, firstReviewAt: null, firstReviewUser: null,
-      approvedAt: null, approvedBy: null,
+      approvedAt: null, approvedBy: null, myLastReviewCommitId: null,
     };
   }
 }

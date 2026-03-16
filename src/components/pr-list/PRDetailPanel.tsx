@@ -11,7 +11,7 @@ import type { IssueTrackerConfig as IssueTrackerConfigSettings } from '../../typ
 import {
   X, ExternalLink, GitBranch, GitMerge, GitPullRequestDraft,
   XOctagon, CheckCircle2, XCircle, Clock, Minus, HelpCircle, User, Terminal,
-  ArrowLeftRight, AlertTriangle,
+  ArrowLeftRight, AlertTriangle, GitCompare,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn } from '../../lib/utils';
@@ -118,7 +118,7 @@ function StatItem({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasConflict, onClose, roundTrips }: Props) {
-  const { pat, issueTrackers } = useSettingsStore();
+  const { pat, userLogin, issueTrackers } = useSettingsStore();
   const [checkoutCopied, setCheckoutCopied] = useState(false);
 
   const checkoutCmd = `gh pr checkout ${pr.html_url}`;
@@ -131,13 +131,20 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasC
   };
 
   const { data: details, isLoading: detailsLoading } = useQuery({
-    queryKey: ['pr-details', pr.repo, pr.number],
-    queryFn: () => fetchPRDetails(pat, pr.repo, pr.number),
+    queryKey: ['pr-details', pr.repo, pr.number, userLogin],
+    queryFn: () => fetchPRDetails(pat, pr.repo, pr.number, userLogin || undefined),
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
+
+  // Build "diff since last review" URL if the current user has reviewed this PR
+  // and the head has advanced since their last review commit.
+  const myLastReviewCommitId = details?.myLastReviewCommitId ?? null;
+  const diffSinceReviewUrl = (myLastReviewCommitId && myLastReviewCommitId !== pr.head.sha)
+    ? `${pr.html_url}/files/${myLastReviewCommitId}..${pr.head.sha}`
+    : null;
 
   const additions = details?.additions ?? pr.additions;
   const deletions = details?.deletions ?? pr.deletions;
@@ -271,6 +278,17 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasC
                 <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
                   <AlertTriangle className="h-3.5 w-3.5" />Merge conflict
                 </span>
+              )}
+              {diffSinceReviewUrl && (
+                <a
+                  href={diffSinceReviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                  title="View changes since your last review"
+                >
+                  <GitCompare className="h-3.5 w-3.5" />Diff since your review
+                </a>
               )}
             </div>
 
