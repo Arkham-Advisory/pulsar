@@ -19,6 +19,7 @@ import {
   GitFork,
   Target,
   Link2,
+  Bell,
 } from 'lucide-react';
 import type { RepoFilterEntry, IssueTrackerConfig } from '../../types/settings';
 
@@ -73,6 +74,8 @@ export function SettingsPanel({ onClose }: Props) {
     issueTrackers,
     addIssueTracker,
     removeIssueTracker,
+    notificationsEnabled,
+    setNotificationsEnabled,
   } = useSettingsStore();
 
   const [localPat, setLocalPat] = useState(pat);
@@ -548,6 +551,65 @@ export function SettingsPanel({ onClose }: Props) {
                 </div>
               </div>
 
+            </div>
+          </section>
+
+          {/* Notifications */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Bell className="h-4 w-4 text-slate-400" />
+              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Browser Notifications
+              </h3>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-700 dark:text-slate-300">Enable notifications</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={notificationsEnabled}
+                  onClick={() => {
+                    if (!notificationsEnabled && 'Notification' in window && Notification.permission === 'default') {
+                      Notification.requestPermission().then((permission) => {
+                        if (permission === 'granted') setNotificationsEnabled(true);
+                      });
+                    } else {
+                      setNotificationsEnabled(!notificationsEnabled);
+                    }
+                  }}
+                  className={cn(
+                    'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none',
+                    notificationsEnabled ? 'bg-brand-600' : 'bg-slate-300 dark:bg-slate-600'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform',
+                      notificationsEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                    )}
+                  />
+                </button>
+              </div>
+
+              {'Notification' in window && Notification.permission === 'denied' && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  Notifications are blocked by your browser. Update site permissions to enable them.
+                </p>
+              )}
+
+              {notificationsEnabled && 'Notification' in window && Notification.permission === 'granted' && (
+                <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <Check className="h-3 w-3 shrink-0" />
+                  Notifications are active.
+                </p>
+              )}
+
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Sends browser alerts for: review requests, CI failures on your PRs, and stale PRs.
+                Notifications repeat at most once per hour per event.
+              </p>
             </div>
           </section>
 
