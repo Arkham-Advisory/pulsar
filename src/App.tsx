@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNotifications } from './hooks/useNotifications'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useSettingsStore } from './store/settings'
 import { capture } from './lib/analytics'
@@ -84,6 +85,8 @@ function AppContent() {
   const updatedAt = page === 'prs' ? prListUpdatedAt : dashUpdatedAt
   const progress = page === 'prs' ? prListProgress : dashProgress
   const lastUpdated = updatedAt ? new Date(updatedAt) : null
+
+  useNotifications()
 
   // Apply dark mode class
   useEffect(() => {

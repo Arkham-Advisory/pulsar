@@ -28,6 +28,7 @@ interface SettingsStore extends Settings {
   addIssueTracker: (tracker: IssueTrackerConfig) => void;
   removeIssueTracker: (id: string) => void;
   updateIssueTracker: (id: string, update: Partial<IssueTrackerConfig>) => void;
+  setNotificationsEnabled: (enabled: boolean) => void;
   hasValidSettings: () => boolean;
 }
 
@@ -76,6 +77,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set((state) => ({
           issueTrackers: state.issueTrackers.map((t) => (t.id === id ? { ...t, ...update } : t)),
         })),
+      setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
       hasValidSettings: () => {
         const { pat, repoFilters } = get();
         return pat.trim().length > 0 && repoFilters.length > 0;
@@ -91,6 +93,7 @@ export const useSettingsStore = create<SettingsStore>()(
         slaPolicy: (persisted as Partial<Settings>).slaPolicy ?? DEFAULT_SETTINGS.slaPolicy,
         issueTrackers: (persisted as Partial<Settings>).issueTrackers ?? DEFAULT_SETTINGS.issueTrackers,
         sectionOrder: (persisted as Partial<Settings>).sectionOrder ?? DEFAULT_SETTINGS.sectionOrder,
+        notificationsEnabled: (persisted as Partial<Settings>).notificationsEnabled ?? DEFAULT_SETTINGS.notificationsEnabled,
       }),
       // Isolate PAT in localStorage under a specific key
       partialize: (state) => ({
@@ -110,6 +113,7 @@ export const useSettingsStore = create<SettingsStore>()(
         sectionOrder: state.sectionOrder,
         slaPolicy: state.slaPolicy,
         issueTrackers: state.issueTrackers,
+        notificationsEnabled: state.notificationsEnabled,
       }),
     }
   )

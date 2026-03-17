@@ -61,6 +61,7 @@ export interface Settings {
   sectionOrder: string[];
   slaPolicy: SLAPolicy;
   issueTrackers: IssueTrackerConfig[];
+  notificationsEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -80,5 +81,6 @@ export const DEFAULT_SETTINGS: Settings = {
   sectionOrder: ['my-turn', 'ready-to-merge', 'needs-attention', 'review-requested', 'my-prs', 'all-prs', 'drafts'],
   slaPolicy: { firstReviewHours: 4, approvalHours: 24, mergeHours: 48 },
   issueTrackers: [],
+  notificationsEnabled: false,
 };
 
