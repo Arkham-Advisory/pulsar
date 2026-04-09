@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 AGENTS.md
+
+test-results/
+playwright-report/

@@ -457,7 +457,8 @@ export function PRListPage({ onOpenSettings }: Props) {
         return (
           pr.title.toLowerCase().includes(q) ||
           pr.repo.toLowerCase().includes(q) ||
-          pr.user.login.toLowerCase().includes(q)
+          pr.user.login.toLowerCase().includes(q) ||
+          pr.number.toString().includes(q)
         );
       }
       return true;
@@ -728,7 +729,7 @@ export function PRListPage({ onOpenSettings }: Props) {
             type="text"
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Search title, repo, author…"
+            placeholder="Search title, repo, author, #number…"
             className="input pl-8 text-sm h-8 py-0"
           />
           {search && (
