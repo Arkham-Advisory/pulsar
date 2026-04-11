@@ -8,7 +8,10 @@
 import type { AuthenticatedGitHubUser } from '../services/github';
 
 const key = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
+let posthogClient: PostHogClient | null = null;
+let initPromise: Promise<void> | null = null;
 let pendingGitHubUser: AuthenticatedGitHubUser | null = null;
+let pendingCaptures: Array<{ event: string; properties?: Record<string, unknown> }> = [];
 
 interface PostHogClient {
   identify: (distinctId: string, properties?: Record<string, unknown>) => void;
@@ -20,7 +23,16 @@ interface PostHogClient {
 }
 
 function getPostHog(): PostHogClient | undefined {
-  return (window as Window & { posthog?: PostHogClient }).posthog;
+  return posthogClient ?? (window as Window & { posthog?: PostHogClient }).posthog;
+}
+
+function flushPendingCaptures(ph: PostHogClient): void {
+  if (pendingCaptures.length === 0) return;
+
+  pendingCaptures.forEach(({ event, properties }) => {
+    ph.capture(event, properties);
+  });
+  pendingCaptures = [];
 }
 
 function applyGitHubIdentity(ph: PostHogClient, user: AuthenticatedGitHubUser): void {
@@ -39,27 +51,42 @@ export function isAnalyticsEnabled(): boolean {
 
 export async function initAnalytics(): Promise<void> {
   if (!key) return;
+  if (posthogClient) return;
+  if (initPromise) return initPromise;
 
-  const { default: posthog } = await import('posthog-js');
-  posthog.init(key, {
-    api_host: 'https://z.arkham-advisory.com',
-    ui_host: 'https://eu.posthog.com',
-    person_profiles: 'identified_only',
-    capture_pageview: true,
-    capture_pageleave: true,
-    autocapture: false,          // no automatic click/input capture
-    disable_session_recording: false,
-    session_recording: {
-      maskAllInputs: true,
-      maskTextSelector: '[data-ph-mask-text]',
-      blockSelector: '[data-ph-no-capture]',
-    },
-  });
-  window.dispatchEvent(new Event('posthog:ready'));
+  initPromise = (async () => {
+    const { default: posthog } = await import('posthog-js');
+    posthog.init(key, {
+      api_host: 'https://z.arkham-advisory.com',
+      ui_host: 'https://eu.posthog.com',
+      person_profiles: 'identified_only',
+      capture_pageview: true,
+      capture_pageleave: true,
+      autocapture: false,          // no automatic click/input capture
+      disable_session_recording: false,
+      session_recording: {
+        maskAllInputs: true,
+        maskTextSelector: '[data-ph-mask-text]',
+        blockSelector: '[data-ph-no-capture]',
+      },
+    });
 
-  if (pendingGitHubUser) {
-    applyGitHubIdentity(posthog, pendingGitHubUser);
-    pendingGitHubUser = null;
+    posthogClient = posthog;
+    (window as Window & { posthog?: PostHogClient }).posthog = posthog;
+
+    if (pendingGitHubUser) {
+      applyGitHubIdentity(posthog, pendingGitHubUser);
+      pendingGitHubUser = null;
+    }
+    flushPendingCaptures(posthog);
+
+    window.dispatchEvent(new Event('posthog:ready'));
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
   }
 }
 
@@ -91,7 +118,10 @@ export function resetAnalyticsIdentity(): void {
  */
 export function capture(event: string, properties?: Record<string, unknown>): void {
   const ph = getPostHog();
-  if (!ph) return;
+  if (!ph) {
+    if (initPromise) pendingCaptures.push({ event, properties });
+    return;
+  }
   ph.capture(event, properties);
 }
 
