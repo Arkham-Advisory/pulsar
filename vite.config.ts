@@ -19,6 +19,7 @@ export default defineConfig({
         'site.webmanifest',
       ],
       workbox: {
+        clientsClaim: true,
         cleanupOutdatedCaches: true,
         runtimeCaching: [],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],

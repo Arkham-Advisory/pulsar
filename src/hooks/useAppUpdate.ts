@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 
 const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const UPDATE_APPLY_FALLBACK_MS = 3000;
 
 interface AppUpdateState {
   updateAvailable: boolean;
@@ -72,6 +73,12 @@ export function useAppUpdate(): AppUpdateState {
       }
 
       await updateServiceWorkerRef.current(true);
+
+      // If the browser doesn't emit the controller change event promptly,
+      // fall back to a regular reload so the UI doesn't spin forever.
+      window.setTimeout(() => {
+        window.location.reload();
+      }, UPDATE_APPLY_FALLBACK_MS);
     } catch (error) {
       console.error('Failed to activate the updated Pulsar app.', error);
       setApplyError(true);
