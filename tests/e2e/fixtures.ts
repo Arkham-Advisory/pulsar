@@ -8,7 +8,7 @@
  *    fixture data so tests are fully offline and deterministic.
  */
 
-import type { Page, Route } from '@playwright/test';
+import type { Locator, Page, Route } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
 // Minimal mock data
@@ -22,8 +22,8 @@ export const MOCK_PR = {
   state: 'open',
   merged_at: null,
   closed_at: null,
-  created_at: '2026-03-01T10:00:00Z',
-  updated_at: '2026-03-10T12:00:00Z',
+  created_at: '2026-04-01T10:00:00Z',
+  updated_at: '2026-04-10T12:00:00Z',
   user: { login: 'alice', avatar_url: 'https://avatars.githubusercontent.com/u/1', html_url: '' },
   labels: [],
   draft: false,
@@ -45,9 +45,9 @@ export const MOCK_MERGED_PR = {
   number: 41,
   title: 'fix: resolve stale PR edge case',
   state: 'closed',
-  merged_at: '2026-03-05T15:00:00Z',
-  closed_at: '2026-03-05T15:00:00Z',
-  updated_at: '2026-03-05T15:00:00Z',
+  merged_at: '2026-04-05T15:00:00Z',
+  closed_at: '2026-04-05T15:00:00Z',
+  updated_at: '2026-04-05T15:00:00Z',
 };
 
 // ---------------------------------------------------------------------------
@@ -120,6 +120,21 @@ export async function mockPostHog(page: Page, options: { commandPalette?: boolea
   }, { enabled: commandPalette });
 }
 
+export async function mockClipboard(page: Page) {
+  await page.addInitScript(() => {
+    const clipboard = {
+      writeText: async (text: string) => {
+        (window as Window & { __mockClipboardText?: string }).__mockClipboardText = text;
+      },
+      readText: async () => (window as Window & { __mockClipboardText?: string }).__mockClipboardText ?? '',
+    };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // GitHub API mock
 // ---------------------------------------------------------------------------
@@ -135,60 +150,68 @@ const rateLimitResponse = {
 
 export async function mockGitHub(page: Page) {
   await page.route('**/api.github.com/**', async (route: Route) => {
-    const url = route.request().url();
+    const requestUrl = new URL(route.request().url());
+    const { pathname, searchParams } = requestUrl;
 
     // /user — identity check
-    if (url.endsWith('/user')) {
+    if (pathname === '/user') {
       return route.fulfill({ json: { login: 'alice', avatar_url: 'https://avatars.githubusercontent.com/u/1' } });
     }
 
     // Rate limit
-    if (url.includes('/rate_limit')) {
+    if (pathname === '/rate_limit') {
       return route.fulfill({ json: rateLimitResponse });
     }
 
     // PR list
-    if (url.match(/\/repos\/acme\/frontend\/pulls\?.*state=open/)) {
-      return route.fulfill({ json: [MOCK_PR] });
-    }
-    if (url.match(/\/repos\/acme\/frontend\/pulls\?.*state=closed/)) {
-      return route.fulfill({ json: [MOCK_MERGED_PR] });
+    if (pathname === '/repos/acme/frontend/pulls') {
+      return route.fulfill({
+        json: searchParams.get('state') === 'closed' ? [MOCK_MERGED_PR] : [MOCK_PR],
+      });
     }
 
     // Single PR (detail panel)
-    if (url.match(/\/repos\/acme\/frontend\/pulls\/42$/)) {
+    if (pathname === '/repos/acme/frontend/pulls/42') {
       return route.fulfill({ json: { ...MOCK_PR, body: '## Summary\n\nAdds heatmap.' } });
     }
 
     // PR commits
-    if (url.includes('/pulls/42/commits')) {
+    if (pathname === '/repos/acme/frontend/pulls/42/commits') {
       return route.fulfill({
         json: [{
           sha: 'abc1234',
-          commit: { author: { date: '2026-03-01T11:00:00Z' }, committer: { date: '2026-03-01T11:00:00Z' }, message: 'initial' },
+          commit: { author: { date: '2026-04-01T11:00:00Z' }, committer: { date: '2026-04-01T11:00:00Z' }, message: 'initial' },
         }],
       });
     }
 
     // PR reviews
-    if (url.includes('/pulls/42/reviews')) {
+    if (pathname === '/repos/acme/frontend/pulls/42/reviews') {
       return route.fulfill({
         json: [{
           id: 1,
           user: { login: 'bob', avatar_url: '' },
           state: 'APPROVED',
-          submitted_at: '2026-03-03T09:00:00Z',
+          submitted_at: '2026-04-03T09:00:00Z',
           body: 'LGTM',
         }],
       });
     }
 
     // Check runs
-    if (url.includes('/check-runs')) {
+    if (pathname === '/repos/acme/frontend/commits/abc1234/check-runs') {
       return route.fulfill({ json: { check_runs: [] } });
     }
 
     // Any other list → empty
     return route.fulfill({ json: emptyPage.data });
   });
+}
+
+export function getMockPrTitleLink(page: Page): Locator {
+  return page.getByTitle(MOCK_PR.title).first();
+}
+
+export function getMockPrRow(page: Page): Locator {
+  return getMockPrTitleLink(page).locator('xpath=ancestor::*[@role="button"][1]');
 }
