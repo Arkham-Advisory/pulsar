@@ -104,6 +104,14 @@ export function CommandPalette({ commands, onClose, onCommandRun, onZeroResults 
     onClose();
   };
 
+  const runCommandAtIndex = (index: number) => {
+    const command = visibleCommands[index];
+    if (!command) return;
+    onCommandRun(command, query);
+    command.perform(query);
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -124,7 +132,10 @@ export function CommandPalette({ commands, onClose, onCommandRun, onZeroResults 
               setSelectedIndex(0);
             }}
             onKeyDown={(event) => {
-              if (event.key === 'ArrowDown') {
+              if (/^[1-9]$/.test(event.key) && !query.trim()) {
+                event.preventDefault();
+                runCommandAtIndex(Number(event.key) - 1);
+              } else if (event.key === 'ArrowDown') {
                 event.preventDefault();
                 setSelectedIndex((current) => Math.min(current + 1, Math.max(visibleCommands.length - 1, 0)));
               } else if (event.key === 'ArrowUp') {
@@ -177,14 +188,14 @@ export function CommandPalette({ commands, onClose, onCommandRun, onZeroResults 
                           onClose();
                         }}
                         className={cn(
-                          'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors',
+                          'flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors',
                           active
                             ? 'bg-brand-50 text-slate-900 dark:bg-brand-950/40 dark:text-slate-50'
                             : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/80',
                         )}
                       >
                         <div className={cn(
-                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold',
+                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[11px] font-semibold',
                           active
                             ? 'border-brand-200 bg-white text-brand-600 dark:border-brand-800 dark:bg-slate-900 dark:text-brand-300'
                             : 'border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500',
@@ -192,7 +203,7 @@ export function CommandPalette({ commands, onClose, onCommandRun, onZeroResults 
                           {absoluteIndex + 1}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{command.title}</div>
+                          <div className="truncate text-[13px] font-medium">{command.title}</div>
                           {command.subtitle && (
                             <div className="truncate text-xs text-slate-400 dark:text-slate-500">{command.subtitle}</div>
                           )}

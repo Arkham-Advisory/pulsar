@@ -40,6 +40,18 @@ test.describe('command palette', () => {
     await expect(page.getByText(/open prs/i).first()).toBeVisible({ timeout: 10_000 });
   });
 
+  test('runs the numbered command shortcut from an empty query', async ({ page }) => {
+    await seedSettings(page, { extra: { analyticsConsent: true } });
+    await mockPostHog(page, { commandPalette: true });
+    await mockGitHub(page);
+    await page.goto('/');
+
+    await page.keyboard.press(PALETTE_SHORTCUT);
+    await expect(page.getByRole('dialog', { name: /command palette/i })).toBeVisible();
+    await page.keyboard.press('2');
+    await expect(page.getByText(/open prs/i).first()).toBeVisible({ timeout: 10_000 });
+  });
+
   test('can search PRs, open a PR, toggle merged, clear filters, and copy a share link', async ({ page }) => {
     await seedSettings(page, { extra: { analyticsConsent: true } });
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
