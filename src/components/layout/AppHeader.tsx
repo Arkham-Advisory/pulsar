@@ -13,6 +13,7 @@ import {
   BarChart3,
   List,
   Activity,
+  Command,
 } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
 import { format } from 'date-fns';
@@ -25,6 +26,9 @@ interface Props {
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onOpenSettings: () => void;
+  onOpenCommandPalette?: () => void;
+  showCommandPaletteTrigger?: boolean;
+  commandPaletteShortcutLabel?: string;
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
@@ -45,6 +49,9 @@ export function AppHeader({
   isFullscreen,
   onToggleFullscreen,
   onOpenSettings,
+  onOpenCommandPalette,
+  showCommandPaletteTrigger = false,
+  commandPaletteShortcutLabel = '⌘K',
   isLoading,
   isFetching,
   isError,
@@ -75,7 +82,7 @@ export function AppHeader({
           <button
             key={id}
             type="button"
-            onClick={() => { onNavigate(id); capture('page_viewed', { page: id }); }}
+            onClick={() => { onNavigate(id); capture('nav_tab_clicked', { page: id }); }}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
               page === id
@@ -131,9 +138,31 @@ export function AppHeader({
         >
           {isFetching ? <Spinner size="sm" className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
         </button>
-        <button onClick={toggleDarkMode} className="btn-ghost p-2" type="button" title="Toggle theme">
+        <button
+          onClick={() => {
+            const nextMode = darkMode ? 'light' : 'dark';
+            toggleDarkMode();
+            capture('theme_toggled', { mode: nextMode });
+          }}
+          className="btn-ghost p-2"
+          type="button"
+          title="Toggle theme"
+        >
           {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
+        {showCommandPaletteTrigger && onOpenCommandPalette && (
+          <button
+            onClick={onOpenCommandPalette}
+            className="hidden items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200 md:flex"
+            type="button"
+            title="Open command palette"
+            aria-label="Open command palette"
+          >
+            <Command className="h-3.5 w-3.5" />
+            <span>Command</span>
+            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] dark:bg-slate-800">{commandPaletteShortcutLabel}</span>
+          </button>
+        )}
         <button onClick={onToggleFullscreen} className="btn-ghost p-2" type="button">
           {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </button>

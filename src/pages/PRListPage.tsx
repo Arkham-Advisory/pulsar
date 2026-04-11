@@ -41,6 +41,7 @@ import {
 import { cn } from '../lib/utils';
 import type { PullRequest } from '../types/github';
 import type { FilterPreset, RepoFilterEntry } from '../types/settings';
+import type { PRListCommandBridge } from '../types/commandPalette';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -158,9 +159,10 @@ interface SharedLinkState {
 
 interface Props {
   onOpenSettings?: () => void;
+  onCommandStateChange?: (state: PRListCommandBridge | null) => void;
 }
 
-export function PRListPage({ onOpenSettings }: Props) {
+export function PRListPage({ onOpenSettings, onCommandStateChange }: Props) {
   const {
     pat,
     userLogin, repoFilters, staleDaysThreshold,
@@ -223,6 +225,43 @@ export function PRListPage({ onOpenSettings }: Props) {
   const [sharedLink, setSharedLink] = useState<SharedLinkState | null>(null);
   const [sharedLinkPayload, setSharedLinkPayload] = useState<SharedLinkPayload | null>(null);
 
+  const applySearch = useCallback((value: string) => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearch(value);
+    if (value.trim()) {
+      capture('filter_changed', { filter_type: 'search' });
+    }
+  }, []);
+
+  const applyStateFilter = useCallback((value: StateFilter) => {
+    setStateFilter(value);
+    capture('filter_changed', { filter_type: 'state', value });
+  }, []);
+
+  const applyRepoSelection = useCallback((next: string[]) => {
+    setSelectedRepos(next);
+    capture('filter_changed', { filter_type: 'repo', value: next.length });
+  }, [setSelectedRepos]);
+
+  const applyReviewerSelection = useCallback((next: string[]) => {
+    setSelectedReviewers(next);
+    capture('filter_changed', { filter_type: 'reviewer', value: next.length });
+  }, []);
+
+  const toggleBotFilter = useCallback(() => {
+    setHideBotPRs(!hideBotPRs);
+  }, [hideBotPRs, setHideBotPRs]);
+
+  const clearFilters = useCallback(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setSearch('');
+    setStateFilter('open');
+    setSelectedRepos([]);
+    setHideBotPRs(false);
+    setSelectedReviewers([]);
+    capture('filter_changed', { filter_type: 'clear_all' });
+  }, [setHideBotPRs, setSelectedRepos]);
+
   // ── Shareable URL ──────────────────────────────────────────────────────────
   // Read filter from hash on first render
   const didReadHash = useRef(false);
@@ -234,12 +273,17 @@ export function PRListPage({ onOpenSettings }: Props) {
     try {
       const raw = JSON.parse(atob(hash.slice(8)));
       if (raw.share === true) {
+        capture('share_link_opened', {
+          requires_pat: !pat,
+          repo_filter_count: Array.isArray(raw.repoFilters) ? raw.repoFilters.length : 0,
+          selected_repo_count: Array.isArray(raw.selectedRepos) ? raw.selectedRepos.length : 0,
+        });
         setSharedLinkPayload(raw as SharedLinkPayload);
         return true;
       }
     } catch { /* ignore malformed hash */ }
     return false;
-  }, []);
+  }, [pat]);
 
   useEffect(() => {
     if (didReadHash.current) return;
@@ -297,11 +341,15 @@ export function PRListPage({ onOpenSettings }: Props) {
         replaceRepoFilters,
       });
     }
+    capture('share_link_applied', {
+      replace_repo_filters: replaceRepoFilters,
+      repo_filter_count: Array.isArray(payload.repoFilters) ? payload.repoFilters.length : 0,
+      selected_repo_count: Array.isArray(payload.selectedRepos) ? payload.selectedRepos.length : 0,
+    });
     setSharedLinkPayload(null);
     // Now that the share link has been acted on, let the hash-write effect take over.
     didReadHash.current = true;
     history.replaceState(null, '', window.location.pathname + window.location.search);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setSelectedRepos, setHideBotPRs, setSectionOrder]);
 
   // When a PAT is available and there are pending shared repo configs, check access
@@ -375,6 +423,13 @@ export function PRListPage({ onOpenSettings }: Props) {
     const encoded = btoa(JSON.stringify(payload));
     const url = `${window.location.origin}${window.location.pathname}#filter=${encoded}`;
     navigator.clipboard.writeText(url).then(() => {
+      capture('share_link_created', {
+        has_search: !!search,
+        has_repo_filters: repoFilters.length > 0,
+        has_reviewer_filters: selectedReviewers.length > 0,
+        has_custom_section_order: !isDefaultOrder,
+        selected_repo_count: selectedRepos.length,
+      });
       setCopyLinkToast(true);
       setTimeout(() => setCopyLinkToast(false), 2000);
     });
@@ -602,12 +657,6 @@ export function PRListPage({ onOpenSettings }: Props) {
     return prs.filter((pr) => keySet.has(`${pr.repo}#${pr.number}`));
   }, [prs, pinnedPRs]);
 
-  const handleTogglePin = useCallback((pr: PullRequest) => {
-    const key = `${pr.repo}#${pr.number}`;
-    if (pinnedPRs.includes(key)) unpinPR(key);
-    else pinPR(key);
-  }, [pinnedPRs, pinPR, unpinPR]);
-
   // Drag-and-drop section reordering
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -699,23 +748,109 @@ export function PRListPage({ onOpenSettings }: Props) {
     });
   }, [sectionDefs, sectionOrder]);
 
+  const handleTogglePin = useCallback((pr: PullRequest) => {
+    const key = `${pr.repo}#${pr.number}`;
+    const action = pinnedPRs.includes(key) ? 'unpin' : 'pin';
+    if (action === 'unpin') unpinPR(key);
+    else pinPR(key);
+    capture('pr_pinned', { action, section: sectionDefs.find((section) => section.prs.some((p) => p.id === pr.id))?.id ?? 'unknown' });
+  }, [pinnedPRs, pinPR, sectionDefs, unpinPR]);
+
   const applyPreset = useCallback((preset: FilterPreset) => {
-    setSearch(preset.search);
+    applySearch(preset.search);
     setStateFilter(preset.stateFilter);
     setSelectedRepos(preset.selectedRepos);
     setHideBotPRs(preset.hideBotPRs);
     setSelectedReviewers(preset.selectedReviewers ?? []);
+    capture('preset_applied', {
+      selected_repo_count: preset.selectedRepos.length,
+      reviewer_count: preset.selectedReviewers?.length ?? 0,
+      state_filter: preset.stateFilter,
+    });
     setPresetDropdownOpen(false);
     setSaveMode(false);
-  }, [setSelectedRepos, setHideBotPRs]);
+  }, [applySearch, setSelectedRepos, setHideBotPRs]);
 
   const savePreset = useCallback(() => {
     const name = saveNameInput.trim();
     if (!name) return;
     addFilterPreset({ id: Date.now().toString(), name, search, stateFilter, selectedRepos, hideBotPRs, selectedReviewers });
+    capture('preset_saved', {
+      selected_repo_count: selectedRepos.length,
+      reviewer_count: selectedReviewers.length,
+      has_search: !!search,
+      state_filter: stateFilter,
+    });
     setSaveNameInput('');
     setSaveMode(false);
   }, [saveNameInput, search, stateFilter, selectedRepos, hideBotPRs, selectedReviewers, addFilterPreset]);
+
+  const handleSelectPR = useCallback((pr: PullRequest) => {
+    capture('pr_detail_opened', {
+      has_conflict: conflictStatuses?.has(pr.id) === true,
+      approval_status: approvalStatuses?.get(pr.id) ?? 'unknown',
+      ci_status: ciStatuses?.get(pr.id) ?? pr.ciStatus,
+      is_draft: pr.draft,
+      section: sectionDefs.find((section) => section.prs.some((candidate) => candidate.id === pr.id))?.id ?? 'unknown',
+    });
+    setSelectedPR(pr);
+  }, [approvalStatuses, ciStatuses, conflictStatuses, sectionDefs]);
+
+  const openPRById = useCallback((prId: number) => {
+    const pr = prs.find((candidate) => candidate.id === prId);
+    if (pr) handleSelectPR(pr);
+  }, [handleSelectPR, prs]);
+
+  useEffect(() => {
+    if (!onCommandStateChange) return;
+
+    const commandState: PRListCommandBridge = {
+      search,
+      stateFilter,
+      selectedRepos,
+      selectedReviewers,
+      hideBotPRs,
+      repos,
+      reviewers: allReviewers,
+      filterPresets,
+      visiblePRs: filtered,
+      setSearch: applySearch,
+      setStateFilter: applyStateFilter,
+      setSingleRepo: (repo) => applyRepoSelection([repo]),
+      setSingleReviewer: (reviewer) => applyReviewerSelection([reviewer]),
+      toggleHideBotPRs: toggleBotFilter,
+      clearFilters,
+      applyPreset: (presetId) => {
+        const preset = filterPresets.find((candidate) => candidate.id === presetId);
+        if (preset) applyPreset(preset);
+      },
+      openPR: openPRById,
+      copyShareLink: handleCopyLink,
+    };
+
+    onCommandStateChange(commandState);
+    return () => onCommandStateChange(null);
+  }, [
+    allReviewers,
+    applyPreset,
+    applyRepoSelection,
+    applyReviewerSelection,
+    applySearch,
+    applyStateFilter,
+    clearFilters,
+    filterPresets,
+    filtered,
+    handleCopyLink,
+    hideBotPRs,
+    onCommandStateChange,
+    openPRById,
+    repos,
+    search,
+    selectedRepos,
+    selectedReviewers,
+    stateFilter,
+    toggleBotFilter,
+  ]);
 
   return (
     <ErrorBoundary>
@@ -734,7 +869,7 @@ export function PRListPage({ onOpenSettings }: Props) {
           />
           {search && (
             <button
-              onClick={() => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); setSearch(''); }}
+              onClick={() => applySearch('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               type="button"
             >
@@ -749,7 +884,7 @@ export function PRListPage({ onOpenSettings }: Props) {
             <button
               key={s}
               type="button"
-              onClick={() => { setStateFilter(s); capture('filter_changed', { filter_type: 'state', value: s }); }}
+              onClick={() => applyStateFilter(s)}
               className={cn(
                 'text-xs px-3 py-1 rounded-md font-medium transition-colors capitalize',
                 stateFilter === s
@@ -787,7 +922,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                 {/* All option */}
                 <button
                   type="button"
-                  onClick={() => setSelectedRepos([])}
+                  onClick={() => applyRepoSelection([])}
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',
                     selectedRepos.length === 0 ? 'text-brand-600 dark:text-brand-400 font-medium' : 'text-slate-600 dark:text-slate-300'
@@ -807,8 +942,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                       type="button"
                       onClick={() => {
                         const next = active ? selectedRepos.filter((x) => x !== r) : [...selectedRepos, r];
-                        setSelectedRepos(next);
-                        capture('filter_changed', { filter_type: 'repo', value: next.length });
+                        applyRepoSelection(next);
                       }}
                       className={cn(
                         'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',
@@ -853,7 +987,7 @@ export function PRListPage({ onOpenSettings }: Props) {
               <div className="absolute top-full mt-1 left-0 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg min-w-52 max-w-xs max-h-72 overflow-y-auto py-1">
                 <button
                   type="button"
-                  onClick={() => setSelectedReviewers([])}
+                  onClick={() => applyReviewerSelection([])}
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',
                     selectedReviewers.length === 0 ? 'text-brand-600 dark:text-brand-400 font-medium' : 'text-slate-600 dark:text-slate-300'
@@ -875,8 +1009,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                         const next = active
                           ? selectedReviewers.filter((x) => x !== login)
                           : [...selectedReviewers, login];
-                        setSelectedReviewers(next);
-                        capture('filter_changed', { filter_type: 'reviewer', value: next.length });
+                        applyReviewerSelection(next);
                       }}
                       className={cn(
                         'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors',
@@ -898,7 +1031,7 @@ export function PRListPage({ onOpenSettings }: Props) {
         {/* Bot filter toggle */}
         <button
           type="button"
-          onClick={() => setHideBotPRs(!hideBotPRs)}
+          onClick={toggleBotFilter}
           title={hideBotPRs ? 'Click to show bot PRs (dependabot, renovate…)' : 'Click to hide bot PRs (dependabot, renovate…)'}
           className={cn(
             'flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors border shrink-0',
@@ -1000,7 +1133,14 @@ export function PRListPage({ onOpenSettings }: Props) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeFilterPreset(preset.id)}
+                        onClick={() => {
+                          removeFilterPreset(preset.id)
+                          capture('preset_deleted', {
+                            selected_repo_count: preset.selectedRepos.length,
+                            reviewer_count: preset.selectedReviewers?.length ?? 0,
+                            state_filter: preset.stateFilter,
+                          })
+                        }}
                         className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-400 dark:hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Delete preset"
                       >
@@ -1137,7 +1277,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                 accent="brand"
                 defaultOpen
                 showRepo={showRepoColumn}
-                onSelectPR={setSelectedPR}
+                onSelectPR={handleSelectPR}
                 pinnedPRs={pinnedPRs}
                 onTogglePin={handleTogglePin}
               />
@@ -1152,7 +1292,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                 defaultOpen
                 showRepo={showRepoColumn}
                 emptyMessage="No merged PRs in the selected time range"
-                onSelectPR={setSelectedPR}
+                onSelectPR={handleSelectPR}
                 pinnedPRs={pinnedPRs}
                 onTogglePin={handleTogglePin}
               />
@@ -1172,7 +1312,7 @@ export function PRListPage({ onOpenSettings }: Props) {
                       sizeTotals={sizeTotals}
                       roundTripCounts={roundTripCounts}
                       showRepo={showRepoColumn}
-                      onSelectPR={setSelectedPR}
+                      onSelectPR={handleSelectPR}
                       pinnedPRs={pinnedPRs}
                       onTogglePin={handleTogglePin}
                     />

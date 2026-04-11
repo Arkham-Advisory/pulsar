@@ -1,6 +1,7 @@
 import { BarChart3, Github, ShieldCheck } from 'lucide-react';
 import { useSettingsStore } from '../../store/settings';
-import { initAnalytics } from '../../lib/analytics';
+import { identifyGitHubUser, initAnalytics } from '../../lib/analytics';
+import { validatePAT } from '../../services/github';
 
 const GITHUB_URL = 'https://github.com/stumpyfr/pulsar';
 
@@ -8,7 +9,7 @@ const GITHUB_URL = 'https://github.com/stumpyfr/pulsar';
 const ANALYTICS_ENABLED = !!import.meta.env.VITE_POSTHOG_KEY;
 
 export function AnalyticsConsent() {
-  const { analyticsConsent, setAnalyticsConsent } = useSettingsStore();
+  const { analyticsConsent, pat, setAnalyticsConsent } = useSettingsStore();
 
   if (!ANALYTICS_ENABLED) return null;
   if (analyticsConsent !== null) return null;
@@ -16,6 +17,10 @@ export function AnalyticsConsent() {
   const handleAccept = async () => {
     setAnalyticsConsent(true);
     await initAnalytics();
+    if (!pat) return;
+
+    const result = await validatePAT(pat);
+    if (result.valid) identifyGitHubUser(result.user);
   };
 
   const handleSelfHost = () => {
@@ -44,14 +49,15 @@ export function AnalyticsConsent() {
         {/* Body */}
         <div className="px-5 py-4 space-y-3">
           <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-            This hosted version collects <strong className="text-slate-800 dark:text-slate-200">anonymous usage data</strong> to help improve Pulsar — things like which pages you visit or how you interact with filters.
+            This hosted version collects <strong className="text-slate-800 dark:text-slate-200">privacy-conscious usage data</strong> to help improve Pulsar — including masked session recordings and the GitHub identity behind your PAT after you opt in.
           </p>
 
           <ul className="space-y-1.5">
             {[
               'No GitHub tokens or credentials',
-              'No repo names, org names, or PR titles',
-              'No personal or identifying information',
+              'All typed inputs are masked in recordings',
+              'Visible app text is masked in recordings',
+              'GitHub identity is only linked after consent',
               'Powered by PostHog',
             ].map((item) => (
               <li key={item} className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">

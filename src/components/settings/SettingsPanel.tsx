@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useSettingsStore } from '../../store/settings';
 import { validatePAT, fetchOwnerRepoCount } from '../../services/github';
-import { capture } from '../../lib/analytics';
+import { capture, identifyGitHubUser } from '../../lib/analytics';
 import { cn } from '../../lib/utils';
 import { Spinner } from '../ui/Spinner';
 import {
@@ -69,6 +69,7 @@ export function SettingsPanel({ onClose }: Props) {
     refreshIntervalMinutes,
     setRefreshInterval,
     userLogin,
+    analyticsConsent,
     slaPolicy,
     setSLAPolicy,
     issueTrackers,
@@ -147,16 +148,17 @@ export function SettingsPanel({ onClose }: Props) {
     const result = await validatePAT(localPat);
     if (result.valid) {
       setPatStatus('valid');
-      setPatUser(result.login || '');
+      setPatUser(result.user.login);
       setPat(localPat);
-      setUserLogin(result.login || '');
+      setUserLogin(result.user.login);
+      if (analyticsConsent === true) identifyGitHubUser(result.user);
       capture('pat_validated', { success: true });
     } else {
       setPatStatus('invalid');
       setPatError(result.error || 'Invalid token');
       capture('pat_validated', { success: false });
     }
-  }, [localPat, setPat]);
+  }, [analyticsConsent, localPat, setPat, setUserLogin]);
 
   const handleAddFilter = useCallback(async () => {
     setAddError('');
@@ -174,6 +176,7 @@ export function SettingsPanel({ onClose }: Props) {
         return;
       }
       addRepoFilter({ id, type: 'org', owner });
+      capture('repo_filter_added', { filter_mode: 'org' });
       setOwnerInput('');
     } else if (filterMode === 'prefix') {
       const owner = ownerInput.trim();
@@ -182,6 +185,7 @@ export function SettingsPanel({ onClose }: Props) {
       if (!prefix) { setAddError('Prefix is required'); return; }
       const entry: RepoFilterEntry = { id, type: 'prefix', owner, prefix };
       addRepoFilter(entry);
+      capture('repo_filter_added', { filter_mode: 'prefix' });
       setOwnerInput('');
       setPrefixInput('');
     } else {
@@ -198,6 +202,7 @@ export function SettingsPanel({ onClose }: Props) {
       if (!owner || !repo) { setAddError('Enter owner/repo (e.g. my-org/api-service)'); return; }
       const entry: RepoFilterEntry = { id, type: 'repo', owner, repo };
       addRepoFilter(entry);
+      capture('repo_filter_added', { filter_mode: 'repo' });
       setOwnerInput('');
       setRepoInput('');
     }
@@ -238,7 +243,7 @@ export function SettingsPanel({ onClose }: Props) {
                 GitHub Access Token
               </h3>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-3" data-ph-no-capture>
               <div className="relative">
                 <input
                   type={showPat ? 'text' : 'password'}
@@ -331,7 +336,10 @@ export function SettingsPanel({ onClose }: Props) {
                         </span>
                       </div>
                       <button
-                        onClick={() => removeRepoFilter(filter.id)}
+                        onClick={() => {
+                          removeRepoFilter(filter.id)
+                          capture('repo_filter_removed', { filter_mode: filter.type })
+                        }}
                         className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors ml-2 shrink-0"
                         type="button"
                       >
@@ -440,6 +448,7 @@ export function SettingsPanel({ onClose }: Props) {
                         setOwnerInput('');
                         setPendingOrg(null);
                         capture('large_org_warning_shown', { repo_count: pendingOrg.count, action: 'add_anyway' });
+                        capture('repo_filter_added', { filter_mode: 'org' });
                       }}
                     >
                       Add anyway
@@ -493,7 +502,10 @@ export function SettingsPanel({ onClose }: Props) {
                     <button
                       key={range}
                       type="button"
-                      onClick={() => setTimeRange(range)}
+                      onClick={() => {
+                        setTimeRange(range)
+                        capture('time_range_changed', { time_range: range })
+                      }}
                       className={cn(
                         'px-3 py-1.5 text-xs rounded-lg font-medium transition-colors',
                         timeRange === range
@@ -572,10 +584,15 @@ export function SettingsPanel({ onClose }: Props) {
                   onClick={() => {
                     if (!notificationsEnabled && 'Notification' in window && Notification.permission === 'default') {
                       Notification.requestPermission().then((permission) => {
-                        if (permission === 'granted') setNotificationsEnabled(true);
+                        if (permission === 'granted') {
+                          setNotificationsEnabled(true);
+                          capture('notifications_toggled', { enabled: true });
+                        }
                       });
                     } else {
-                      setNotificationsEnabled(!notificationsEnabled);
+                      const enabled = !notificationsEnabled;
+                      setNotificationsEnabled(enabled);
+                      capture('notifications_toggled', { enabled });
                     }
                   }}
                   className={cn(

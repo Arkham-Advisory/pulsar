@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import { capture } from '../../lib/analytics';
 import { useSettingsStore } from '../../store/settings';
 import { fetchPRDetails } from '../../services/github';
 import type { PullRequest } from '../../types/github';
@@ -125,6 +126,7 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasC
 
   const handleCopyCheckout = () => {
     navigator.clipboard.writeText(checkoutCmd).then(() => {
+      capture('checkout_command_copied', { section: 'detail_panel' });
       setCheckoutCopied(true);
       setTimeout(() => setCheckoutCopied(false), 2000);
     });
@@ -155,7 +157,12 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasC
   const body = rawBody ? processIssueLinks(rawBody, issueTrackers, pr.repo) : rawBody;
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        capture('pr_detail_closed', { method: 'escape' });
+        onClose();
+      }
+    };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
@@ -168,7 +175,10 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasC
       {/* Backdrop */}
       <div
         className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={() => {
+          capture('pr_detail_closed', { method: 'backdrop' });
+          onClose();
+        }}
         aria-hidden="true"
       />
 
@@ -183,7 +193,10 @@ export function PRDetailPanel({ pr, ciStatus = pr.ciStatus, approvalStatus, hasC
         <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              capture('pr_detail_closed', { method: 'close_button' });
+              onClose();
+            }}
             className="btn-ghost p-1.5 -ml-1 shrink-0"
             aria-label="Close panel"
           >

@@ -4,6 +4,17 @@ import type { RepoFilterEntry } from '../types/settings';
 
 let octokitInstance: Octokit | null = null;
 
+export interface AuthenticatedGitHubUser {
+  id: number;
+  login: string;
+  avatar_url: string;
+  html_url: string;
+}
+
+export type ValidatePATResult =
+  | { valid: true; user: AuthenticatedGitHubUser }
+  | { valid: false; error: string };
+
 export function getOctokit(pat: string): Octokit {
   if (!octokitInstance || (octokitInstance as any)._auth !== pat) {
     octokitInstance = new Octokit({ auth: pat });
@@ -17,11 +28,19 @@ export function clearOctokitCache() {
 }
 
 // Validate PAT by calling /user
-export async function validatePAT(pat: string): Promise<{ valid: boolean; login?: string; error?: string }> {
+export async function validatePAT(pat: string): Promise<ValidatePATResult> {
   try {
     const octokit = new Octokit({ auth: pat });
     const { data } = await octokit.users.getAuthenticated();
-    return { valid: true, login: data.login };
+    return {
+      valid: true,
+      user: {
+        id: data.id,
+        login: data.login,
+        avatar_url: data.avatar_url,
+        html_url: data.html_url,
+      },
+    };
   } catch (err: any) {
     return { valid: false, error: err.message };
   }

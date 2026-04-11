@@ -1,12 +1,16 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNotifications } from './hooks/useNotifications'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+import { useNotifications } from './hooks/useNotifications'
+import { useAppUpdate } from './hooks/useAppUpdate'
+import { useCommandPaletteEnabled } from './hooks/useCommandPaletteEnabled'
 import { useSettingsStore } from './store/settings'
-import { capture } from './lib/analytics'
+import { capture, identifyGitHubUser, resetAnalyticsIdentity } from './lib/analytics'
 import { validatePAT } from './services/github'
 import { usePRListData } from './hooks/usePRListData'
 import { useDashboardData } from './hooks/useDashboardData'
 import { AppHeader, type AppPage } from './components/layout/AppHeader'
+import { AppUpdateBanner } from './components/layout/AppUpdateBanner'
+import { CommandPalette } from './components/command/CommandPalette'
 import { AnalyticsConsent } from './components/layout/AnalyticsConsent'
 import { PRListPage } from './pages/PRListPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -14,6 +18,17 @@ import { APILimitsPage } from './pages/APILimitsPage'
 import { EmptyState } from './components/dashboard/EmptyState'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { SharedLinkPreviewModal, type SharedLinkPayload } from './components/pr-list/SharedLinkPreviewModal'
+import type { CommandItem, PRListCommandBridge } from './types/commandPalette'
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT'
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,42 +41,80 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const {
-    darkMode, hasValidSettings, refreshIntervalMinutes, pat, userLogin, setUserLogin,
-    setRepoFilters, addRepoFilter, setSelectedRepos, setHideBotPRs, setSectionOrder,
+    updateAvailable,
+    isApplyingUpdate,
+    applyError,
+    applyUpdate,
+    dismissUpdate,
+  } = useAppUpdate()
+  const {
+    darkMode,
+    toggleDarkMode,
+    hasValidSettings,
+    refreshIntervalMinutes,
+    pat,
+    userLogin,
+    analyticsConsent,
+    setUserLogin,
+    setRepoFilters,
+    addRepoFilter,
+    setSelectedRepos,
+    setHideBotPRs,
+    setSectionOrder,
   } = useSettingsStore()
+  const commandPaletteEnabled = useCommandPaletteEnabled()
+  const hasTrackedUpdatePromptRef = useRef(false)
 
   // Parse the share link payload once on mount.
   // When there is no PAT yet, we show the combined PAT+preview modal from here
   // instead of pushing the user into Settings.
   const [noPATSharePayload] = useState<SharedLinkPayload | null>(() => {
-    if (pat) return null; // Already authenticated — PRListPage handles the modal
+    if (pat) return null
     try {
-      const hash = window.location.hash;
-      if (!hash.startsWith('#filter=')) return null;
-      const raw = JSON.parse(atob(hash.slice(8)));
-      if (raw.share === true) return raw as SharedLinkPayload;
+      const hash = window.location.hash
+      if (!hash.startsWith('#filter=')) return null
+      const raw = JSON.parse(atob(hash.slice(8)))
+      if (raw.share === true) return raw as SharedLinkPayload
     } catch { /* ignore */ }
-    return null;
-  });
-  // Whether the no-PAT modal has been dismissed (so it doesn't re-appear after Cancel)
-  const [noPATModalDismissed, setNoPATModalDismissed] = useState(false);
+    return null
+  })
+  const [noPATModalDismissed, setNoPATModalDismissed] = useState(false)
 
-  // Detect share link once on mount — allows PRListPage to mount (and show the review
-  // modal) even before the user has configured repo filters, as long as they have a PAT.
+  useEffect(() => {
+    if (!noPATSharePayload) return
+    capture('share_link_opened', {
+      requires_pat: true,
+      repo_filter_count: Array.isArray(noPATSharePayload.repoFilters) ? noPATSharePayload.repoFilters.length : 0,
+      selected_repo_count: Array.isArray(noPATSharePayload.selectedRepos) ? noPATSharePayload.selectedRepos.length : 0,
+    })
+  }, [noPATSharePayload])
+
   const hasShareLink = useMemo(() => {
     try {
-      const hash = window.location.hash;
-      if (!hash.startsWith('#filter=')) return false;
-      return JSON.parse(atob(hash.slice(8))).share === true;
-    } catch { return false; }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      const hash = window.location.hash
+      if (!hash.startsWith('#filter=')) return false
+      return JSON.parse(atob(hash.slice(8))).share === true
+    } catch {
+      return false
+    }
+  }, [])
+
   const [showSettings, setShowSettings] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
   const [page, setPage] = useState<AppPage>('prs')
+  const [prListCommandBridge, setPRListCommandBridge] = useState<PRListCommandBridge | null>(null)
   const qc = useQueryClient()
+  const commandPaletteShortcutLabel = useMemo(
+    () => (typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'),
+    [],
+  )
 
-  // PR list data — always active once settings are valid
+  const openSettings = useCallback((source: 'header' | 'empty_state' | 'share_link' | 'first_visit' | 'command_palette') => {
+    setShowSettings(true)
+    capture('settings_opened', { source })
+  }, [])
+
   const {
     isLoading: prListLoading,
     isFetching: prListFetching,
@@ -70,7 +123,6 @@ function AppContent() {
     progress: prListProgress,
   } = usePRListData()
 
-  // Dashboard data — activates when user navigates to the dashboard
   const {
     isLoading: dashLoading,
     isFetching: dashFetching,
@@ -88,12 +140,21 @@ function AppContent() {
 
   useNotifications()
 
-  // Apply dark mode class
+  useEffect(() => {
+    if (!updateAvailable || hasTrackedUpdatePromptRef.current) return
+    hasTrackedUpdatePromptRef.current = true
+    capture('app_update_available')
+  }, [updateAvailable])
+
+  useEffect(() => {
+    if (updateAvailable) return
+    hasTrackedUpdatePromptRef.current = false
+  }, [updateAvailable])
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
   }, [darkMode])
 
-  // Auto-refresh
   useEffect(() => {
     if (!hasValidSettings() || refreshIntervalMinutes <= 0) return
     const interval = setInterval(() => {
@@ -106,14 +167,15 @@ function AppContent() {
     return () => clearInterval(interval)
   }, [refreshIntervalMinutes, hasValidSettings, qc])
 
-  // Fullscreen
   const handleToggleFullscreen = useCallback(() => {
+    const enabled = !document.fullscreenElement
+    capture('fullscreen_toggled', { enabled, page })
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {})
     } else {
       document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
     }
-  }, [])
+  }, [page])
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement)
@@ -121,20 +183,31 @@ function AppContent() {
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  // Auto-populate userLogin if pat is already saved but login was never resolved
-  // (happens when upgrading from a version that didn't store userLogin)
   useEffect(() => {
-    if (pat && !userLogin) {
-      validatePAT(pat).then((result) => {
-        if (result.valid && result.login) setUserLogin(result.login)
-      }).catch(() => {})
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!pat || (userLogin && analyticsConsent !== true)) return
 
-  // Open settings on first visit — but skip if we're showing the no-PAT share modal
+    let cancelled = false
+
+    validatePAT(pat).then((result) => {
+      if (cancelled || !result.valid) return
+
+      if (!userLogin) setUserLogin(result.user.login)
+      if (analyticsConsent === true) identifyGitHubUser(result.user)
+    }).catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [analyticsConsent, pat, setUserLogin, userLogin])
+
   useEffect(() => {
-    if (!hasValidSettings() && !hasShareLink) setShowSettings(true)
+    if (!pat) {
+      resetAnalyticsIdentity()
+    }
+  }, [pat])
+
+  useEffect(() => {
+    if (!hasValidSettings() && !hasShareLink) openSettings('first_visit')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -150,35 +223,263 @@ function AppContent() {
     }
   }, [page, qc])
 
-  // Apply the no-PAT share link: save repo settings to store and clear the hash.
-  // The PAT itself is saved inside SharedLinkPreviewModal before this callback fires.
   const handleNoPATShareApply = useCallback((payload: SharedLinkPayload, replaceRepoFilters: boolean) => {
     if (Array.isArray(payload.repoFilters) && payload.repoFilters.length > 0) {
       if (replaceRepoFilters) {
-        setRepoFilters(payload.repoFilters);
+        setRepoFilters(payload.repoFilters)
       } else {
-        payload.repoFilters.forEach((f) => addRepoFilter(f));
+        payload.repoFilters.forEach((f) => addRepoFilter(f))
       }
     }
-    if (Array.isArray(payload.sectionOrder)) setSectionOrder(payload.sectionOrder);
-    if (typeof payload.hideBotPRs === 'boolean') setHideBotPRs(payload.hideBotPRs);
-    if (Array.isArray(payload.selectedRepos)) setSelectedRepos(payload.selectedRepos);
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    setNoPATModalDismissed(true);
+    if (Array.isArray(payload.sectionOrder)) setSectionOrder(payload.sectionOrder)
+    if (typeof payload.hideBotPRs === 'boolean') setHideBotPRs(payload.hideBotPRs)
+    if (Array.isArray(payload.selectedRepos)) setSelectedRepos(payload.selectedRepos)
+    capture('share_link_applied', {
+      replace_repo_filters: replaceRepoFilters,
+      repo_filter_count: Array.isArray(payload.repoFilters) ? payload.repoFilters.length : 0,
+      selected_repo_count: Array.isArray(payload.selectedRepos) ? payload.selectedRepos.length : 0,
+    })
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+    setNoPATModalDismissed(true)
   }, [setRepoFilters, addRepoFilter, setSectionOrder, setHideBotPRs, setSelectedRepos])
 
   const handleNoPATShareDismiss = useCallback(() => {
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    setNoPATModalDismissed(true);
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+    setNoPATModalDismissed(true)
   }, [])
 
-  const validSettings = hasValidSettings()
-  // Allow mounting PRListPage with just a PAT when a share link is in the URL,
-  // so the share preview modal can appear and supply the missing repo configuration.
-  const canMountPRList = validSettings || (!!pat && hasShareLink)
+  const handleApplyUpdate = useCallback(() => {
+    capture('app_update_refresh_clicked')
+    void applyUpdate()
+  }, [applyUpdate])
 
-  // Show the no-PAT combined modal when: share link present, no PAT, not yet dismissed
+  const handleDismissUpdate = useCallback(() => {
+    capture('app_update_dismissed')
+    dismissUpdate()
+  }, [dismissUpdate])
+
+  const validSettings = hasValidSettings()
+  const canMountPRList = validSettings || (!!pat && hasShareLink)
   const showNoPATModal = !!noPATSharePayload && !pat && !noPATModalDismissed
+
+  const closeCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(false)
+  }, [])
+
+  const openCommandPalette = useCallback((source: 'shortcut' | 'header_button') => {
+    if (!commandPaletteEnabled) return
+    if (showSettings || showNoPATModal) return
+    if (document.querySelector('[role="dialog"]')) return
+    setIsCommandPaletteOpen(true)
+    capture('command_palette_opened', { source, page })
+  }, [commandPaletteEnabled, page, showNoPATModal, showSettings])
+
+  useEffect(() => {
+    if (!commandPaletteEnabled && isCommandPaletteOpen) {
+      setIsCommandPaletteOpen(false)
+    }
+  }, [commandPaletteEnabled, isCommandPaletteOpen])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return
+      if (isEditableElement(event.target)) return
+      event.preventDefault()
+      if (isCommandPaletteOpen) {
+        closeCommandPalette()
+      } else {
+        openCommandPalette('shortcut')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [closeCommandPalette, isCommandPaletteOpen, openCommandPalette])
+
+  const commandItems = useMemo(() => {
+    const items: CommandItem[] = [
+      {
+        id: 'nav-prs',
+        group: 'navigation',
+        title: 'Go to Pull Requests',
+        keywords: ['prs', 'pull requests', 'triage'],
+        perform: () => {
+          setPage('prs')
+          capture('page_viewed', { page: 'prs', source: 'command_palette' })
+        },
+      },
+      {
+        id: 'nav-dashboard',
+        group: 'navigation',
+        title: 'Go to Dashboard',
+        keywords: ['dashboard', 'metrics', 'charts'],
+        perform: () => {
+          setPage('dashboard')
+          capture('page_viewed', { page: 'dashboard', source: 'command_palette' })
+        },
+      },
+      {
+        id: 'nav-api',
+        group: 'navigation',
+        title: 'Go to API Limits',
+        keywords: ['api', 'limits', 'rate limit'],
+        perform: () => {
+          setPage('api')
+          capture('page_viewed', { page: 'api', source: 'command_palette' })
+        },
+      },
+      {
+        id: 'action-settings',
+        group: 'actions',
+        title: 'Open Settings',
+        keywords: ['settings', 'preferences', 'config'],
+        perform: () => openSettings('command_palette'),
+      },
+      {
+        id: 'action-refresh',
+        group: 'actions',
+        title: 'Refresh data',
+        keywords: ['refresh', 'reload', 'sync'],
+        perform: () => handleRefresh(),
+      },
+      {
+        id: 'action-theme',
+        group: 'actions',
+        title: darkMode ? 'Switch to light mode' : 'Switch to dark mode',
+        keywords: ['theme', 'dark mode', 'light mode', 'appearance'],
+        perform: () => {
+          const nextMode = darkMode ? 'light' : 'dark'
+          toggleDarkMode()
+          capture('theme_toggled', { mode: nextMode, source: 'command_palette' })
+        },
+      },
+      {
+        id: 'action-fullscreen',
+        group: 'actions',
+        title: isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen',
+        keywords: ['fullscreen', 'presentation'],
+        perform: () => handleToggleFullscreen(),
+      },
+    ]
+
+    if (page === 'prs' && prListCommandBridge) {
+      items.push(
+        {
+          id: 'action-search-prs',
+          group: 'actions',
+          title: 'Search PRs…',
+          subtitle: 'Apply the current palette query to the PR list',
+          keywords: ['search', 'find', 'query'],
+          perform: (query) => prListCommandBridge.setSearch(query.trim()),
+        },
+        {
+          id: 'filter-open',
+          group: 'filters',
+          title: 'Show open PRs',
+          subtitle: prListCommandBridge.stateFilter === 'open' ? 'Currently active' : undefined,
+          keywords: ['open', 'state', 'filter'],
+          perform: () => prListCommandBridge.setStateFilter('open'),
+        },
+        {
+          id: 'filter-merged',
+          group: 'filters',
+          title: 'Show merged PRs',
+          subtitle: prListCommandBridge.stateFilter === 'merged' ? 'Currently active' : undefined,
+          keywords: ['merged', 'state', 'filter'],
+          perform: () => prListCommandBridge.setStateFilter('merged'),
+        },
+        {
+          id: 'filter-bots',
+          group: 'filters',
+          title: prListCommandBridge.hideBotPRs ? 'Show bot PRs' : 'Hide bot PRs',
+          keywords: ['bots', 'dependabot', 'renovate'],
+          perform: () => prListCommandBridge.toggleHideBotPRs(),
+        },
+        {
+          id: 'filter-clear',
+          group: 'filters',
+          title: 'Clear all filters',
+          keywords: ['clear', 'reset', 'filters'],
+          perform: () => prListCommandBridge.clearFilters(),
+        },
+        {
+          id: 'action-share-link',
+          group: 'actions',
+          title: 'Copy share link',
+          keywords: ['share', 'link', 'copy'],
+          perform: () => prListCommandBridge.copyShareLink(),
+        },
+        {
+          id: 'action-save-preset-settings',
+          group: 'actions',
+          title: 'Save current filters as preset',
+          subtitle: 'Opens Settings to name and save the preset',
+          keywords: ['save preset', 'bookmark', 'filters'],
+          perform: () => openSettings('command_palette'),
+        },
+      )
+
+      prListCommandBridge.repos.forEach((repo) => {
+        items.push({
+          id: `repo-${repo}`,
+          group: 'filters',
+          title: `Filter by repo: ${repo.split('/')[1]}`,
+          subtitle: repo,
+          keywords: ['repo', 'repository', repo],
+          perform: () => prListCommandBridge.setSingleRepo(repo),
+        })
+      })
+
+      prListCommandBridge.reviewers.forEach((reviewer) => {
+        items.push({
+          id: `reviewer-${reviewer}`,
+          group: 'filters',
+          title: `Filter by reviewer: ${reviewer}`,
+          keywords: ['reviewer', reviewer],
+          perform: () => prListCommandBridge.setSingleReviewer(reviewer),
+        })
+      })
+
+      prListCommandBridge.filterPresets.forEach((preset) => {
+        items.push({
+          id: `preset-${preset.id}`,
+          group: 'presets',
+          title: preset.name,
+          subtitle: [
+            preset.stateFilter,
+            preset.search && `"${preset.search}"`,
+            preset.selectedRepos.length > 0 && `${preset.selectedRepos.length} repos`,
+            preset.selectedReviewers.length > 0 && `${preset.selectedReviewers.length} reviewers`,
+            preset.hideBotPRs && 'No bots',
+          ].filter(Boolean).join(' · '),
+          keywords: ['preset', preset.name],
+          perform: () => prListCommandBridge.applyPreset(preset.id),
+        })
+      })
+
+      prListCommandBridge.visiblePRs.forEach((pr) => {
+        items.push({
+          id: `pr-${pr.id}`,
+          group: 'pull_requests',
+          title: pr.title,
+          subtitle: `${pr.repo} #${pr.number} · ${pr.user.login}`,
+          keywords: ['pr', 'pull request', `#${pr.number}`, String(pr.number), pr.repo, pr.user.login],
+          perform: () => prListCommandBridge.openPR(pr.id),
+        })
+      })
+    }
+
+    return items
+  }, [
+    darkMode,
+    handleRefresh,
+    handleToggleFullscreen,
+    isFullscreen,
+    openSettings,
+    page,
+    prListCommandBridge,
+    toggleDarkMode,
+  ])
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
@@ -187,7 +488,10 @@ function AppContent() {
         onNavigate={setPage}
         isFullscreen={isFullscreen}
         onToggleFullscreen={handleToggleFullscreen}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={() => openSettings('header')}
+        onOpenCommandPalette={() => openCommandPalette('header_button')}
+        showCommandPaletteTrigger={commandPaletteEnabled}
+        commandPaletteShortcutLabel={commandPaletteShortcutLabel}
         isLoading={isLoading}
         isFetching={isFetching}
         isError={isError}
@@ -196,14 +500,47 @@ function AppContent() {
         progress={progress}
       />
 
+      {updateAvailable && (
+        <AppUpdateBanner
+          isApplyingUpdate={isApplyingUpdate}
+          applyError={applyError}
+          onApplyUpdate={handleApplyUpdate}
+          onDismiss={handleDismissUpdate}
+        />
+      )}
+
       {!canMountPRList ? (
-        <EmptyState onOpenSettings={() => setShowSettings(true)} />
+        <EmptyState onOpenSettings={() => openSettings('empty_state')} />
       ) : page === 'prs' ? (
-        <PRListPage onOpenSettings={() => setShowSettings(true)} />
+        <PRListPage
+          onOpenSettings={() => openSettings('share_link')}
+          onCommandStateChange={setPRListCommandBridge}
+        />
       ) : page === 'dashboard' ? (
         <DashboardPage />
       ) : (
         <APILimitsPage />
+      )}
+
+      {commandPaletteEnabled && isCommandPaletteOpen && (
+        <CommandPalette
+          commands={commandItems}
+          onClose={closeCommandPalette}
+          onCommandRun={(command, query) => {
+            capture('command_palette_command_run', {
+              command_id: command.id,
+              command_group: command.group,
+              page,
+              has_query: query.trim().length > 0,
+            })
+          }}
+          onZeroResults={(query) => {
+            capture('command_palette_zero_results', {
+              page,
+              query_length: query.trim().length,
+            })
+          }}
+        />
       )}
 
       {showNoPATModal && (
@@ -233,4 +570,3 @@ function App() {
 }
 
 export default App
-

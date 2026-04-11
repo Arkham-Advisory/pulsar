@@ -16,7 +16,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { validatePAT } from '../../services/github';
+import type { AuthenticatedGitHubUser } from '../../services/github';
 import { useSettingsStore } from '../../store/settings';
+import { identifyGitHubUser } from '../../lib/analytics';
 import { Spinner } from '../ui/Spinner';
 import type { RepoFilterEntry } from '../../types/settings';
 
@@ -85,10 +87,10 @@ export function SharedLinkPreviewModal({ payload, currentRepoFilters, onApply, o
   const [replaceRepos, setReplaceRepos] = useState(!hasUserConfig);
 
   // PAT entry (only used when requiresPAT is true)
-  const { setPat, setUserLogin } = useSettingsStore();
+  const { setPat, setUserLogin, analyticsConsent } = useSettingsStore();
   const [localPat, setLocalPat] = useState('');
   const [patStatus, setPatStatus] = useState<PATStatus>('idle');
-  const [patUser, setPatUser] = useState('');
+  const [patUser, setPatUser] = useState<AuthenticatedGitHubUser | null>(null);
   const [patError, setPatError] = useState('');
   const [showPat, setShowPat] = useState(false);
 
@@ -99,7 +101,7 @@ export function SharedLinkPreviewModal({ payload, currentRepoFilters, onApply, o
     const result = await validatePAT(localPat);
     if (result.valid) {
       setPatStatus('valid');
-      setPatUser(result.login || '');
+      setPatUser(result.user);
     } else {
       setPatStatus('invalid');
       setPatError(result.error || 'Invalid token');
@@ -108,13 +110,14 @@ export function SharedLinkPreviewModal({ payload, currentRepoFilters, onApply, o
 
   const handleApply = useCallback(() => {
     if (requiresPAT) {
-      if (patStatus !== 'valid') return;
+      if (patStatus !== 'valid' || !patUser) return;
       // Persist the PAT before handing control to the parent
       setPat(localPat);
-      setUserLogin(patUser);
+      setUserLogin(patUser.login);
+      if (analyticsConsent === true) identifyGitHubUser(patUser);
     }
     onApply(payload, replaceRepos);
-  }, [requiresPAT, patStatus, localPat, patUser, setPat, setUserLogin, onApply, payload, replaceRepos]);
+  }, [analyticsConsent, requiresPAT, patStatus, localPat, patUser, setPat, setUserLogin, onApply, payload, replaceRepos]);
 
   const hasSearch = !!payload.search;
   const hasMergedState = payload.stateFilter === 'merged';
@@ -170,7 +173,7 @@ export function SharedLinkPreviewModal({ payload, currentRepoFilters, onApply, o
                   GitHub Access Token
                 </p>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2" data-ph-no-capture>
                 <div className="relative">
                   <input
                     type={showPat ? 'text' : 'password'}
@@ -204,7 +207,7 @@ export function SharedLinkPreviewModal({ payload, currentRepoFilters, onApply, o
                   {patStatus === 'valid' && (
                     <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                       <Check className="h-3.5 w-3.5" />
-                      Authenticated as <strong>{patUser}</strong>
+                      Authenticated as <strong>{patUser?.login}</strong>
                     </span>
                   )}
                   {patStatus === 'invalid' && (

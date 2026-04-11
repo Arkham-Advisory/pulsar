@@ -74,6 +74,7 @@ export function PRRow({ pr, ciStatus = pr.ciStatus, approvalStatus, showRepo = t
   const handleCopyCheckout = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard.writeText(checkoutCmd).then(() => {
+      capture('checkout_command_copied', { section });
       setCheckoutCopied(true);
       setTimeout(() => setCheckoutCopied(false), 2000);
     });
