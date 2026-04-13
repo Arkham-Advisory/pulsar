@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { BrowserRouter } from 'react-router-dom'
 import { useNotifications } from './hooks/useNotifications'
 import { useAppUpdate } from './hooks/useAppUpdate'
-import { useCommandPaletteEnabled } from './hooks/useCommandPaletteEnabled'
 import { useTrackedPageNavigation } from './hooks/useTrackedPageNavigation'
 import { useSettingsStore } from './store/settings'
 import { capture, identifyGitHubUser, resetAnalyticsIdentity } from './lib/analytics'
@@ -65,7 +64,6 @@ function AppContent() {
     setHideBotPRs,
     setSectionOrder,
   } = useSettingsStore()
-  const commandPaletteEnabled = useCommandPaletteEnabled()
   const hasTrackedUpdatePromptRef = useRef(false)
 
   // Parse the share link payload once on mount.
@@ -271,18 +269,11 @@ function AppContent() {
   }, [])
 
   const openCommandPalette = useCallback((source: 'shortcut' | 'header_button') => {
-    if (!commandPaletteEnabled) return
     if (showSettings || showNoPATModal) return
     if (document.querySelector('[role="dialog"]')) return
     setIsCommandPaletteOpen(true)
     capture('command_palette_opened', { source, page })
-  }, [commandPaletteEnabled, page, showNoPATModal, showSettings])
-
-  useEffect(() => {
-    if (!commandPaletteEnabled && isCommandPaletteOpen) {
-      setIsCommandPaletteOpen(false)
-    }
-  }, [commandPaletteEnabled, isCommandPaletteOpen])
+  }, [page, showNoPATModal, showSettings])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -467,7 +458,7 @@ function AppContent() {
         })
       })
 
-      prListCommandBridge.visiblePRs.forEach((pr) => {
+      prListCommandBridge.allPRs.forEach((pr) => {
         items.push({
           id: `pr-${pr.id}`,
           group: 'pull_requests',
@@ -501,7 +492,7 @@ function AppContent() {
         onToggleFullscreen={handleToggleFullscreen}
         onOpenSettings={() => openSettings('header')}
         onOpenCommandPalette={() => openCommandPalette('header_button')}
-        showCommandPaletteTrigger={commandPaletteEnabled}
+        showCommandPaletteTrigger={true}
         commandPaletteShortcutLabel={commandPaletteShortcutLabel}
         isLoading={isLoading}
         isFetching={isFetching}
@@ -535,7 +526,7 @@ function AppContent() {
         <APILimitsPage />
       )}
 
-      {commandPaletteEnabled && isCommandPaletteOpen && (
+      {isCommandPaletteOpen && (
         <CommandPalette
           commands={commandItems}
           onClose={closeCommandPalette}

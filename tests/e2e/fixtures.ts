@@ -88,38 +88,6 @@ export async function seedSettings(page: Page, options: SeedOptions = {}) {
   }, settings);
 }
 
-export async function mockPostHog(page: Page, options: { commandPalette?: boolean } = {}) {
-  const commandPalette = options.commandPalette === true;
-
-  await page.addInitScript(({ enabled }) => {
-    const listeners = new Set<() => void>();
-
-    (window as Window & {
-      posthog?: {
-        capture: () => void;
-        identify: () => void;
-        reset: () => void;
-        isFeatureEnabled: (flag: string) => boolean;
-        onFeatureFlags: (callback: () => void) => () => void;
-        reloadFeatureFlags: () => void;
-      };
-    }).posthog = {
-      capture: () => {},
-      identify: () => {},
-      reset: () => {},
-      isFeatureEnabled: (flag: string) => flag === 'command_palette' && enabled,
-      onFeatureFlags: (callback: () => void) => {
-        listeners.add(callback);
-        callback();
-        return () => listeners.delete(callback);
-      },
-      reloadFeatureFlags: () => {
-        listeners.forEach((callback) => callback());
-      },
-    };
-  }, { enabled: commandPalette });
-}
-
 export async function mockClipboard(page: Page) {
   await page.addInitScript(() => {
     const clipboard = {

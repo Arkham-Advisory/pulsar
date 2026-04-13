@@ -21,6 +21,7 @@ export interface PRListCommandBridge {
   repos: string[];
   reviewers: string[];
   filterPresets: FilterPreset[];
+  allPRs: PullRequest[];
   visiblePRs: PullRequest[];
   setSearch: (value: string) => void;
   setStateFilter: (value: 'open' | 'merged') => void;
