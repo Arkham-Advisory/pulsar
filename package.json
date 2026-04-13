@@ -1,6 +1,7 @@
 {
   "name": "pulsar",
   "version": "0.1.0",
+  "packageManager": "bun@1.3.10",
   "type": "module",
   "scripts": {
     "dev": "vite",

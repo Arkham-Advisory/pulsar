@@ -1,13 +1,4 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from 'recharts';
+import { useState } from 'react';
 import type { BottleneckPhaseData } from '../../types/github';
 import { Card, CardHeader } from '../ui/Card';
 import { formatDuration } from '../../lib/metrics';
@@ -18,26 +9,28 @@ interface Props {
   loading?: boolean;
 }
 
-const PHASE_COLORS = ['#6170f8', '#f59e0b', '#10b981'];
-
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload as BottleneckPhaseData;
-  return (
-    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-xl text-xs">
-      <p className="font-semibold text-slate-700 dark:text-slate-300 mb-2">{label}</p>
-      <div className="text-slate-500 dark:text-slate-400">
-        Avg wait: <span className="font-medium text-slate-900 dark:text-slate-100">{formatDuration(d.avgHours)}</span>
-      </div>
-      <div className="text-slate-500 dark:text-slate-400 mt-1">
-        PRs: <span className="font-medium text-slate-900 dark:text-slate-100">{d.count}</span>
-      </div>
-    </div>
-  );
-};
+function getDelayColor(hours: number, maxHours: number): string {
+  const ratio = maxHours <= 0 ? 0 : hours / maxHours;
+  if (ratio >= 0.85) return '#ef4444';
+  if (ratio >= 0.55) return '#f59e0b';
+  return '#38bdf8';
+}
 
 export function BottleneckFunnelChart({ data, loading }: Props) {
+  const [hoveredPhase, setHoveredPhase] = useState<string | null>(null);
   const hasData = data.some((d) => d.count > 0);
+  const phases = data.filter((phase) => phase.count > 0);
+  const bottleneck = phases.reduce<BottleneckPhaseData | null>(
+    (currentMax, phase) => {
+      if (!currentMax || phase.avgHours > currentMax.avgHours) return phase;
+      return currentMax;
+    },
+    null
+  );
+  const totalHours = phases.reduce((sum, phase) => sum + phase.avgHours, 0);
+  const maxCount = Math.max(...phases.map((phase) => phase.count), 1);
+  const maxHours = Math.max(...phases.map((phase) => phase.avgHours), 1);
+  const activePhase = phases.find((phase) => phase.phase === hoveredPhase) ?? bottleneck ?? phases[0] ?? null;
 
   return (
     <Card>
@@ -53,36 +46,72 @@ export function BottleneckFunnelChart({ data, loading }: Props) {
           Not enough merged PR data
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart
-            data={data}
-            layout="vertical"
-            margin={{ top: 5, right: 40, left: 10, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" className="dark:[&>line]:stroke-slate-700" />
-            <XAxis
-              type="number"
-              tick={{ fontSize: 11, fill: '#94a3b8' }}
-              axisLine={false}
-              tickLine={false}
-              tickFormatter={(v) => formatDuration(v)}
-            />
-            <YAxis
-              type="category"
-              dataKey="phase"
-              tick={{ fontSize: 11, fill: '#94a3b8' }}
-              axisLine={false}
-              tickLine={false}
-              width={130}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="avgHours" radius={[0, 4, 4, 0]} name="Avg hours">
-              {data.map((_, index) => (
-                <Cell key={index} fill={PHASE_COLORS[index % PHASE_COLORS.length]} fillOpacity={0.85} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="space-y-4">
+          <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+            <svg width="100%" height="220" viewBox="0 0 760 220" className="min-w-[760px]">
+              {phases.map((phase, index) => {
+                const next = phases[index + 1];
+                const x = 30 + index * 240;
+                const width = 140;
+                const bandHeight = Math.max((phase.count / maxCount) * 80, 24);
+                const y = 110 - bandHeight / 2;
+                const fill = getDelayColor(phase.avgHours, maxHours);
+                const isBottleneck = bottleneck?.phase === phase.phase;
+                const isActive = hoveredPhase === null || hoveredPhase === phase.phase;
+
+                return (
+                  <g
+                    key={phase.phase}
+                    onMouseEnter={() => setHoveredPhase(phase.phase)}
+                    onMouseLeave={() => setHoveredPhase(null)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <rect
+                      x={x}
+                      y={y}
+                      width={width}
+                      height={bandHeight}
+                      rx={16}
+                      fill={fill}
+                      fillOpacity={isActive ? (isBottleneck ? 0.95 : 0.82) : 0.2}
+                      stroke={isBottleneck ? '#ef4444' : 'transparent'}
+                      strokeWidth={isBottleneck ? 3 : 0}
+                    />
+                    <text x={x + 16} y={y - 12} fontSize="12" fill="currentColor" className="text-slate-500 dark:text-slate-400">
+                      {phase.phase}
+                    </text>
+                    <text x={x + 16} y={y + bandHeight / 2} fontSize="18" fill="white" fontWeight="700">
+                      {formatDuration(phase.avgHours)}
+                    </text>
+                    <text x={x + 16} y={y + bandHeight / 2 + 18} fontSize="11" fill="rgba(255,255,255,0.92)">
+                      {phase.count} PRs
+                    </text>
+                    {next && (
+                      <path
+                        d={`M ${x + width} ${110 - bandHeight / 2} C ${x + 180} ${110 - bandHeight / 2}, ${x + 200} ${110 - Math.max((next.count / maxCount) * 80, 24) / 2}, ${x + 240} ${110 - Math.max((next.count / maxCount) * 80, 24) / 2}
+                            L ${x + 240} ${110 + Math.max((next.count / maxCount) * 80, 24) / 2}
+                            C ${x + 200} ${110 + Math.max((next.count / maxCount) * 80, 24) / 2}, ${x + 180} ${110 + bandHeight / 2}, ${x + width} ${110 + bandHeight / 2} Z`}
+                        fill={fill}
+                        fillOpacity={isActive ? 0.22 : 0.08}
+                      />
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          {activePhase && (
+            <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                <span className="font-semibold text-slate-900 dark:text-slate-100">{activePhase.phase}</span>{' '}
+                averages {formatDuration(activePhase.avgHours)} across {activePhase.count} merged PRs.
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Total average journey: {formatDuration(totalHours)}. Warmer colors mean longer waits.
+              </p>
+            </div>
+          )}
+        </div>
       )}
     </Card>
   );

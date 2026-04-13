@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSettingsStore } from '../store/settings';
 import { fetchAllData } from '../services/github';
-import { getSinceDate } from '../lib/metrics';
+import { getDashboardComparisonSinceDate } from '../lib/metrics';
 
 // Fetches full enriched data (size + reviews) — used by the dashboard page.
 // Only activates when `enabled` is true (i.e., when the user navigates to the
@@ -11,7 +11,7 @@ export function useDashboardData(enabled: boolean) {
   const { pat, repoFilters, timeRange, hasValidSettings } = useSettingsStore();
   const [progress, setProgress] = useState('');
 
-  const since = getSinceDate(timeRange);
+  const since = getDashboardComparisonSinceDate(timeRange);
 
   const query = useQuery({
     queryKey: ['dashboard-data', pat, JSON.stringify(repoFilters), timeRange],

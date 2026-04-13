@@ -53,11 +53,8 @@ export function StalePRsCard({ prs, staleDays, loading }: Props) {
           {stalePRs.map((pr) => {
             const daysStale = differenceInDays(new Date(), new Date(pr.updated_at));
             return (
-              <a
+              <div
                 key={pr.id}
-                href={pr.html_url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
               >
                 <img
@@ -67,13 +64,28 @@ export function StalePRsCard({ prs, staleDays, loading }: Props) {
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start gap-2">
-                    <span className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-snug line-clamp-1">
+                    <a
+                      href={pr.html_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-snug line-clamp-1 hover:text-brand-600 dark:hover:text-brand-400"
+                    >
                       {truncate(pr.title, 60)}
-                    </span>
-                    <ExternalLink className="h-3 w-3 text-slate-300 group-hover:text-brand-500 flex-shrink-0 mt-0.5 transition-colors" />
+                    </a>
+                    <a href={pr.html_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 text-slate-300 group-hover:text-brand-500 flex-shrink-0 mt-0.5 transition-colors" />
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-slate-400">{pr.repo.split('/')[1]}#{pr.number}</span>
+                    <a
+                      href={`https://github.com/${pr.repo}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-slate-400 underline-offset-2 hover:text-brand-600 hover:underline dark:hover:text-brand-400"
+                    >
+                      {pr.repo.split('/')[1]}
+                    </a>
+                    <span className="text-xs text-slate-400">#{pr.number}</span>
                     <span className="text-xs text-slate-400">·</span>
                     <span className="text-xs text-slate-400">{pr.user.login}</span>
                   </div>
@@ -83,7 +95,7 @@ export function StalePRsCard({ prs, staleDays, loading }: Props) {
                 >
                   {daysStale}d ago
                 </Badge>
-              </a>
+              </div>
             );
           })}
         </div>

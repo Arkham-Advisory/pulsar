@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulsar</title>
+    <script>
+      (function () {
+        var redirectPath = window.location.pathname + window.location.search + window.location.hash;
+        var appRoot = window.location.pathname.replace(/\/[^/]*$/, '/') || '/';
+        sessionStorage.setItem('pulsar:spa-redirect', redirectPath);
+        window.location.replace(appRoot);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

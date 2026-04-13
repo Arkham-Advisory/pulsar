@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+import { BrowserRouter } from 'react-router-dom'
 import { useNotifications } from './hooks/useNotifications'
 import { useAppUpdate } from './hooks/useAppUpdate'
 import { useCommandPaletteEnabled } from './hooks/useCommandPaletteEnabled'
+import { useTrackedPageNavigation } from './hooks/useTrackedPageNavigation'
 import { useSettingsStore } from './store/settings'
 import { capture, identifyGitHubUser, resetAnalyticsIdentity } from './lib/analytics'
 import { validatePAT } from './services/github'
 import { usePRListData } from './hooks/usePRListData'
 import { useDashboardData } from './hooks/useDashboardData'
-import { AppHeader, type AppPage } from './components/layout/AppHeader'
+import { AppHeader } from './components/layout/AppHeader'
 import { AppUpdateBanner } from './components/layout/AppUpdateBanner'
 import { CommandPalette } from './components/command/CommandPalette'
 import { AnalyticsConsent } from './components/layout/AnalyticsConsent'
 import { PRListPage } from './pages/PRListPage'
-import { DashboardPage } from './pages/DashboardPage'
+import { OverviewPage } from './pages/OverviewPage'
+import { TeamPage } from './pages/TeamPage'
 import { APILimitsPage } from './pages/APILimitsPage'
 import { EmptyState } from './components/dashboard/EmptyState'
 import { SettingsPanel } from './components/settings/SettingsPanel'
@@ -102,7 +105,7 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
-  const [page, setPage] = useState<AppPage>('prs')
+  const { page, navigateToPage } = useTrackedPageNavigation('prs', analyticsConsent === true)
   const [prListCommandBridge, setPRListCommandBridge] = useState<PRListCommandBridge | null>(null)
   const qc = useQueryClient()
   const commandPaletteShortcutLabel = useMemo(
@@ -129,13 +132,14 @@ function AppContent() {
     isError: dashError,
     dataUpdatedAt: dashUpdatedAt,
     progress: dashProgress,
-  } = useDashboardData(page === 'dashboard')
+  } = useDashboardData(page === 'overview' || page === 'team')
 
-  const isLoading = page === 'prs' ? prListLoading : dashLoading
-  const isFetching = page === 'prs' ? prListFetching : dashFetching
-  const isError = page === 'prs' ? prListError : dashError
-  const updatedAt = page === 'prs' ? prListUpdatedAt : dashUpdatedAt
-  const progress = page === 'prs' ? prListProgress : dashProgress
+  const isDashboardPage = page === 'overview' || page === 'team'
+  const isLoading = page === 'prs' ? prListLoading : isDashboardPage ? dashLoading : false
+  const isFetching = page === 'prs' ? prListFetching : isDashboardPage ? dashFetching : false
+  const isError = page === 'prs' ? prListError : isDashboardPage ? dashError : false
+  const updatedAt = page === 'prs' ? prListUpdatedAt : isDashboardPage ? dashUpdatedAt : null
+  const progress = page === 'prs' ? prListProgress : isDashboardPage ? dashProgress : undefined
   const lastUpdated = updatedAt ? new Date(updatedAt) : null
 
   useNotifications()
@@ -216,12 +220,12 @@ function AppContent() {
     if (page === 'prs') {
       qc.invalidateQueries({ queryKey: ['pr-list'] })
       qc.invalidateQueries({ queryKey: ['ci-statuses'] })
-    } else if (page === 'dashboard') {
+    } else if (isDashboardPage) {
       qc.invalidateQueries({ queryKey: ['dashboard-data'] })
     } else {
       qc.invalidateQueries({ queryKey: ['rate-limit'] })
     }
-  }, [page, qc])
+  }, [isDashboardPage, page, qc])
 
   const handleNoPATShareApply = useCallback((payload: SharedLinkPayload, replaceRepoFilters: boolean) => {
     if (Array.isArray(payload.repoFilters) && payload.repoFilters.length > 0) {
@@ -301,21 +305,28 @@ function AppContent() {
       {
         id: 'nav-prs',
         group: 'navigation',
-        title: 'Go to Pull Requests',
-        keywords: ['prs', 'pull requests', 'triage'],
+          title: 'Go to Pull Requests',
+          keywords: ['prs', 'pull requests', 'triage'],
+          perform: () => {
+          navigateToPage('prs', 'command_palette')
+          },
+      },
+      {
+        id: 'nav-overview',
+        group: 'navigation',
+        title: 'Go to Overview',
+        keywords: ['overview', 'dashboard', 'metrics', 'charts'],
         perform: () => {
-          setPage('prs')
-          capture('page_viewed', { page: 'prs', source: 'command_palette' })
+          navigateToPage('overview', 'command_palette')
         },
       },
       {
-        id: 'nav-dashboard',
+        id: 'nav-team',
         group: 'navigation',
-        title: 'Go to Dashboard',
-        keywords: ['dashboard', 'metrics', 'charts'],
+        title: 'Go to Team',
+        keywords: ['team', 'collaboration', 'reviewers'],
         perform: () => {
-          setPage('dashboard')
-          capture('page_viewed', { page: 'dashboard', source: 'command_palette' })
+          navigateToPage('team', 'command_palette')
         },
       },
       {
@@ -324,8 +335,7 @@ function AppContent() {
         title: 'Go to API Limits',
         keywords: ['api', 'limits', 'rate limit'],
         perform: () => {
-          setPage('api')
-          capture('page_viewed', { page: 'api', source: 'command_palette' })
+          navigateToPage('api', 'command_palette')
         },
       },
       {
@@ -479,13 +489,14 @@ function AppContent() {
     page,
     prListCommandBridge,
     toggleDarkMode,
+    navigateToPage,
   ])
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
       <AppHeader
         page={page}
-        onNavigate={setPage}
+        onNavigate={navigateToPage}
         isFullscreen={isFullscreen}
         onToggleFullscreen={handleToggleFullscreen}
         onOpenSettings={() => openSettings('header')}
@@ -516,8 +527,10 @@ function AppContent() {
           onOpenSettings={() => openSettings('share_link')}
           onCommandStateChange={setPRListCommandBridge}
         />
-      ) : page === 'dashboard' ? (
-        <DashboardPage />
+      ) : page === 'overview' ? (
+        <OverviewPage />
+      ) : page === 'team' ? (
+        <TeamPage />
       ) : (
         <APILimitsPage />
       )}
@@ -564,7 +577,9 @@ function AppContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
     </QueryClientProvider>
   )
 }

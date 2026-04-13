@@ -147,3 +147,163 @@ export interface SLAHeatmapRow {
   approvalToMerge: number | null;
   prCount: number;
 }
+
+export interface MetricDelta {
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  trend: 'up' | 'down' | 'neutral';
+}
+
+export interface TrendSummary {
+  merged: MetricDelta;
+  cycleTime: MetricDelta;
+  timeToFirstReview: MetricDelta;
+}
+
+export interface HotspotItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  reason: string;
+  score: number;
+  tone: 'danger' | 'warning' | 'neutral';
+  ageLabel: string;
+  url: string;
+  ownerLogin: string;
+  repoLabel: string;
+  repoUrl: string;
+}
+
+export interface RiskBucket {
+  label: string;
+  count: number;
+  tone: 'danger' | 'warning' | 'neutral';
+  description: string;
+}
+
+export interface QueueReviewerPressure {
+  login: string;
+  avatar_url: string;
+  pending: number;
+}
+
+export interface QueueHealth {
+  waitingCount: number;
+  oldestHours: number | null;
+  medianHours: number | null;
+  overloadedReviewers: QueueReviewerPressure[];
+}
+
+export interface PRAgingBucket {
+  label: string;
+  count: number;
+}
+
+export interface ReviewLoadImbalance {
+  topReviewerShare: number;
+  topPendingReviewer: QueueReviewerPressure | null;
+  topCompletedReviewer: QueueReviewerPressure | null;
+  activeReviewers: number;
+}
+
+export interface CollaborationCoverage {
+  lowReciprocityAuthors: Array<{
+    login: string;
+    avatar_url: string;
+    prsOpened: number;
+    reviewsGiven: number;
+  }>;
+  overloadedReviewers: QueueReviewerPressure[];
+  reviewParticipants: number;
+  authorParticipants: number;
+}
+
+export interface MergeReadinessBucket {
+  label: string;
+  count: number;
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
+  description: string;
+}
+
+export interface RepoHotspot {
+  repo: string;
+  repoUrl: string;
+  waitingReview: number;
+  stale: number;
+  failingCi: number;
+  totalScore: number;
+}
+
+export interface ReviewDependencyEdge {
+  author: string;
+  reviewer: string;
+  count: number;
+}
+
+export interface KnowledgeSpreadRow {
+  login: string;
+  avatar_url: string;
+  reposReviewed: number;
+  reviewsCompleted: number;
+  dominantRepo: string | null;
+  dominantRepoUrl: string | null;
+}
+
+export interface HandoffFrictionRow {
+  login: string;
+  avatar_url: string;
+  reviewToApprovalHours: number | null;
+  approvalToMergeHours: number | null;
+  prCount: number;
+}
+
+export interface TeamOperatingModeRow {
+  login: string;
+  avatar_url: string;
+  mode: 'balanced' | 'author-heavy' | 'review-heavy' | 'backlog-owner';
+  prsOpened: number;
+  reviewsGiven: number;
+  openPRs: number;
+  label: string;
+}
+
+export interface FlowStateNode {
+  label: string;
+  count: number;
+  tone: 'brand' | 'warning' | 'danger' | 'success' | 'neutral';
+}
+
+export interface HotspotCascadeReason {
+  label: string;
+  count: number;
+  tone: 'warning' | 'danger' | 'neutral';
+}
+
+export interface HotspotCascadeRepo {
+  repo: string;
+  repoUrl: string;
+  total: number;
+  reasons: HotspotCascadeReason[];
+}
+
+export interface RepoKnowledgeNode {
+  id: string;
+  label: string;
+  avatar_url?: string;
+  url?: string;
+  total: number;
+  side: 'reviewer' | 'repo';
+}
+
+export interface RepoKnowledgeEdge {
+  reviewer: string;
+  repo: string;
+  count: number;
+}
+
+export interface RepoKnowledgeGraph {
+  reviewers: RepoKnowledgeNode[];
+  repos: RepoKnowledgeNode[];
+  edges: RepoKnowledgeEdge[];
+}

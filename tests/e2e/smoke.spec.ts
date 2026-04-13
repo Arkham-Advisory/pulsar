@@ -21,13 +21,13 @@ test('shows PR list content area', async ({ page }) => {
   await expect(getMockPrTitleLink(page)).toBeVisible({ timeout: 15_000 });
 });
 
-test('navigates to dashboard page', async ({ page }) => {
-  await page.getByRole('button', { name: /dashboard/i }).click();
-  // Dashboard renders metric cards
+test('navigates to overview page', async ({ page }) => {
+  await page.getByRole('link', { name: /overview/i }).click();
+  await expect(page).toHaveURL(/\/overview$/);
   await expect(page.getByText(/open prs/i).first()).toBeVisible({ timeout: 10_000 });
 });
 
 test('navigates to API limits page', async ({ page }) => {
-  await page.getByRole('button', { name: /api/i }).click();
+  await page.getByRole('link', { name: /api/i }).click();
   await expect(page.getByText(/rate limit/i).first()).toBeVisible({ timeout: 10_000 });
 });

@@ -10,6 +10,14 @@
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <script>
+      (function () {
+        var redirect = sessionStorage.getItem('pulsar:spa-redirect');
+        if (!redirect) return;
+        sessionStorage.removeItem('pulsar:spa-redirect');
+        window.history.replaceState(null, '', redirect);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

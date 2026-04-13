@@ -21,6 +21,6 @@ Open the app, go to **Settings**, and paste a GitHub Personal Access Token with 
 ## For developers
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev
 ```

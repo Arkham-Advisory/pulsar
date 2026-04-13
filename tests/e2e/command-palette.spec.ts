@@ -27,7 +27,7 @@ test.describe('command palette', () => {
     await expect(page.getByPlaceholder(/search commands, filters, prs/i)).toBeFocused();
   });
 
-  test('navigates to dashboard from the palette', async ({ page }) => {
+  test('navigates to overview from the palette', async ({ page }) => {
     await seedSettings(page, { extra: { analyticsConsent: true } });
     await mockPostHog(page, { commandPalette: true });
     await mockGitHub(page);
@@ -35,8 +35,9 @@ test.describe('command palette', () => {
 
     await page.keyboard.press(PALETTE_SHORTCUT);
     const palette = page.getByRole('dialog', { name: /command palette/i });
-    await palette.getByPlaceholder(/search commands, filters, prs/i).fill('dashboard');
-    await palette.getByRole('button', { name: /go to dashboard/i }).click();
+    await palette.getByPlaceholder(/search commands, filters, prs/i).fill('overview');
+    await palette.getByRole('button', { name: /go to overview/i }).click();
+    await expect(page).toHaveURL(/\/overview$/);
     await expect(page.getByText(/open prs/i).first()).toBeVisible({ timeout: 10_000 });
   });
 

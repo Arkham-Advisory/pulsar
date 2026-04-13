@@ -2,6 +2,8 @@ import { useSettingsStore } from '../../store/settings';
 import { cn } from '../../lib/utils';
 import { useRefreshCountdown } from '../../hooks/useRefreshCountdown';
 import { capture } from '../../lib/analytics';
+import type { AppPage, NavigationSource } from '../../types/navigation';
+import { pageToPath } from '../../lib/navigation';
 import {
   Settings,
   RefreshCw,
@@ -10,19 +12,18 @@ import {
   Moon,
   Sun,
   AlertCircle,
-  BarChart3,
   List,
   Activity,
   Command,
+  UsersRound,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Spinner } from '../ui/Spinner';
 import { format } from 'date-fns';
 
-export type AppPage = 'prs' | 'dashboard' | 'api';
-
 interface Props {
   page: AppPage;
-  onNavigate: (page: AppPage) => void;
+  onNavigate: (page: AppPage, source: NavigationSource) => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onOpenSettings: () => void;
@@ -39,9 +40,14 @@ interface Props {
 
 const NAV_ITEMS: { id: AppPage; label: string; icon: React.ReactNode }[] = [
   { id: 'prs', label: 'Pull Requests', icon: <List className="h-3.5 w-3.5" /> },
-  { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 className="h-3.5 w-3.5" /> },
+  { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
+  { id: 'team', label: 'Team', icon: <UsersRound className="h-3.5 w-3.5" /> },
   { id: 'api', label: 'API Limits', icon: <Activity className="h-3.5 w-3.5" /> },
 ];
+
+function isPlainLeftClick(event: React.MouseEvent<HTMLAnchorElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
 
 export function AppHeader({
   page,
@@ -79,10 +85,14 @@ export function AppHeader({
       {/* Navigation tabs */}
       <nav className="flex items-center gap-1 mr-4">
         {NAV_ITEMS.map(({ id, label, icon }) => (
-          <button
+          <a
             key={id}
-            type="button"
-            onClick={() => { onNavigate(id); capture('nav_tab_clicked', { page: id }); }}
+            href={pageToPath(id)}
+            onClick={(event) => {
+              if (!isPlainLeftClick(event)) return;
+              event.preventDefault();
+              onNavigate(id, 'header_tab');
+            }}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
               page === id
@@ -92,7 +102,7 @@ export function AppHeader({
           >
             {icon}
             <span className="hidden sm:inline">{label}</span>
-          </button>
+          </a>
         ))}
       </nav>
 
