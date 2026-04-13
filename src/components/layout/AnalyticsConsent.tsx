@@ -49,7 +49,7 @@ export function AnalyticsConsent() {
         {/* Body */}
         <div className="px-5 py-4 space-y-3">
           <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-            This hosted version collects <strong className="text-slate-800 dark:text-slate-200">privacy-conscious usage data</strong> to help improve Pulsar — including masked session recordings and the GitHub identity behind your PAT after you opt in.
+            This hosted version collects <strong className="text-slate-800 dark:text-slate-200">privacy-conscious usage data</strong> to help improve Pulsar, including masked session recordings and the GitHub identity behind your PAT after you opt in.
           </p>
 
           <ul className="space-y-1.5">
